@@ -1,0 +1,8 @@
+#ifndef SATURATOR_DEMO_MESSAGESCONSTS_H
+#define SATURATOR_DEMO_MESSAGESCONSTS_H
+
+#include <string>
+
+static FIDString RESTART_MESSAGE = "restart";
+
+#endif // SATURATOR_DEMO_MESSAGESCONSTS_H
