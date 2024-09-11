@@ -16,34 +16,32 @@ VS_VERSION_INFO VERSIONINFO
 #else
  FILEFLAGS 0x0L
 #endif
- FILEOS 0x40004L
- FILETYPE 0x1L
- FILESUBTYPE 0x0L
+ FILEOS VOS__WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
-        BLOCK "040004e4"
+        BLOCK "040904E4" // Locale and code page (US English, Unicode)
         BEGIN
-            VALUE "FileVersion",      FULL_VERSION_STR"\0"
-            VALUE "ProductVersion",   FULL_VERSION_STR"\0"
-            VALUE "OriginalFilename", stringOriginalFilename"\0"
-            VALUE "FileDescription",  stringFileDescription"\0"
-            VALUE "InternalName",     stringFileDescription"\0"
-            VALUE "ProductName",      stringFileDescription"\0"
-            VALUE "CompanyName",      stringCompanyName"\0"
-            VALUE "LegalCopyright",   stringLegalCopyright"\0"
-            VALUE "LegalTrademarks",  stringLegalTrademarks"\0"
-            //VALUE "PrivateBuild",     " \0"
-            //VALUE "SpecialBuild",     " \0"
-            //VALUE "Comments",         " \0"
+            VALUE "FileVersion",      FULL_VERSION_STR "\0"
+            VALUE "ProductVersion",   FULL_VERSION_STR "\0"
+            VALUE "OriginalFilename", stringOriginalFilename "\0"
+            VALUE "FileDescription",  stringFileDescription "\0"
+            VALUE "InternalName",     stringFileDescription "\0"
+            VALUE "ProductName",      stringFileDescription "\0"
+            VALUE "CompanyName",      stringCompanyName "\0"
+            VALUE "LegalCopyright",   stringLegalCopyright "\0"
+            VALUE "LegalTrademarks",  stringLegalTrademarks "\0"
         END
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x400, 1252
+        VALUE "Translation", 0x0409, 1252
     END
 END
 
 
 #define LAYOUT 101
 LAYOUT RCDATA "layout.uidesc"
+
