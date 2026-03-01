@@ -1,5 +1,5 @@
 /*=============================================================================
-   Copyright (c) 2014-2023 Joel de Guzman. All rights reserved.
+   Copyright (c) 2014-2024 Joel de Guzman. All rights reserved.
 
    Distributed under the MIT License [ https://opensource.org/licenses/MIT ]
 =============================================================================*/
@@ -7,6 +7,7 @@
 #define CYCFI_Q_DELAY_JULY_20_2014
 
 #include <q/utility/fractional_ring_buffer.hpp>
+#include <q/support/duration.hpp>
 #include <q/support/base.hpp>
 
 namespace cycfi::q

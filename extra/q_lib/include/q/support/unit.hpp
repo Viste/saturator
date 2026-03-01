@@ -1,5 +1,5 @@
 /*=============================================================================
-   Copyright (c) 2014-2023 Joel de Guzman. All rights reserved.
+   Copyright (c) 2014-2024 Joel de Guzman. All rights reserved.
 
    Distributed under the MIT License [ https://opensource.org/licenses/MIT ]
 =============================================================================*/
@@ -60,6 +60,7 @@ namespace cycfi::q
    {
       using derived_type = Derived;
       using value_type = T;
+      using unit_type = void;
                                     // Temporary constructor. This is not
                                     // marked deprecated because we will use
                                     // this for now.

@@ -1,592 +1,365 @@
 #include "BaseProcessor.hpp"
-#include "MessagesConsts.hpp"
 #include "PluginIds.hpp"
-#include "ctime"
+#include "MessagesConsts.hpp"
 #include <base/source/fstreamer.h>
 #include <public.sdk/source/vst/vstaudioprocessoralgo.h>
-#include <vector>
-#include <iostream>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
+using namespace Steinberg;
+using namespace Steinberg::Vst;
 
-BaseProcessor::BaseProcessor() : ringBuffer(maxBufferSize), saturation(0.0f), gain(1.0f), bypass(false), algorithmMode(false), phaseInverse(false)
-{
+BaseProcessor::BaseProcessor() {
     setControllerClass(FUID::fromTUID(kSaturatorControllerUID));
-    processContextRequirements.needTempo();
-    processContextRequirements.needTransportState();
-    processContextRequirements.needSystemTime();
 }
 
-BaseProcessor::~BaseProcessor() {}
+BaseProcessor::~BaseProcessor() = default;
 
-tresult PLUGIN_API BaseProcessor::initialize(FUnknown *context)
-{
+tresult PLUGIN_API BaseProcessor::initialize(FUnknown* context) {
     tresult result = AudioEffect::initialize(context);
-    if (result != kResultOk) {
+    if (result != kResultOk)
         return result;
-    }
 
-    addAudioInput(STR16("Stereo In"), Steinberg::Vst::SpeakerArr::kStereo, BusTypes::kMain);
-    addAudioOutput(STR16("Stereo Out"), Steinberg::Vst::SpeakerArr::kStereo, BusTypes::kMain);
+    addAudioInput(STR16("Stereo In"), SpeakerArr::kStereo, BusTypes::kMain);
+    addAudioOutput(STR16("Stereo Out"), SpeakerArr::kStereo, BusTypes::kMain);
 
-    buffers = new AudioBuffers();
+    instrumentMode_ = std::make_unique<dsp::InstrumentMode>();
+    drumMode_ = std::make_unique<dsp::DrumMode>();
+    vocalMode_ = std::make_unique<dsp::VocalMode>();
+
     return kResultOk;
 }
 
-
-tresult PLUGIN_API BaseProcessor::terminate()
-{
-    if (buffers) delete buffers;
+tresult PLUGIN_API BaseProcessor::terminate() {
+    instrumentMode_.reset();
+    drumMode_.reset();
+    vocalMode_.reset();
     return AudioEffect::terminate();
 }
 
+tresult PLUGIN_API BaseProcessor::setActive(TBool state) {
+    if (state) {
+        int maxBlock = processSetup.maxSamplesPerBlock;
+        double sr = processSetup.sampleRate;
 
-tresult PLUGIN_API BaseProcessor::setActive(TBool state)
-{
+        instrumentMode_->prepare(sr, maxBlock);
+        drumMode_->prepare(sr, maxBlock);
+        vocalMode_->prepare(sr, maxBlock);
 
-    SpeakerArrangement arr;
-    if (getBusArrangement(kOutput, 0, arr) != kResultTrue)
-    {
-        return kResultFalse;
-    }
-    int32 numChannels = SpeakerArr::getChannelCount(arr);
-    if (numChannels < 1 || numChannels > 2)
-    {
-        return kResultFalse;
+        sendMeteringPointer();
+    } else {
+        instrumentMode_->reset();
+        drumMode_->reset();
+        vocalMode_->reset();
     }
     return AudioEffect::setActive(state);
 }
 
-tresult PLUGIN_API BaseProcessor::process(Vst::ProcessData &data)
-{
-    if (data.inputParameterChanges) {
-        int32 numParamsChanged = data.inputParameterChanges->getParameterCount();
-        for (int32 index = 0; index < numParamsChanged; index++)
-        {
-            if (auto *paramQueue = data.inputParameterChanges->getParameterData(index))
-            {
-                Vst::ParamValue value;
-                int32 sampleOffset;
-                int32 numPoints = paramQueue->getPointCount();
-                switch (paramQueue->getParameterId())
-                {
-                    case kSaturation:
-                        if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
-                        {
-                            saturation = static_cast<float>(value);
-                        }
-                        break;
-                    case kBypass:
-                        if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
-                        {
-                            bypass = (value > 0.5f);
-                        }
-                        break;
-                    case kDeath:
-                        if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
-                        {
-                            saturation *= (value > 0.5f) ? 10.0f : 1.0f;
-                        }
-                    case kSwitch:
-                        if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
-                        {
-                            algorithmMode = static_cast<int>(value * 2.0);
-                            if (algorithmMode < 0) algorithmMode = 0;
-                            if (algorithmMode > 2) algorithmMode = 2;
-                        }
-                        break;
-                    case kGain:
-                        if (paramQueue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
-                        {
-                            gain = static_cast<float>(value);
-                        }
-                        break;
-                }
-            }
-        }
-    }
-
-    if (data.numInputs != 1 || data.numOutputs != 1)
-    {
-        return kResultOk;
-    }
-
-    if (algorithmBeforeState != algorithmMode)
-    {
-        algorithmBeforeState = algorithmMode;
-        return restartMessage();
-    }
-
-    int32 numChannels = data.inputs[0].numChannels;
-    uint32 sampleFramesSize = getSampleFramesSizeInBytes(processSetup, data.numSamples);
-
-    void **in = getChannelBuffersPointer(processSetup, data.inputs[0]);
-    void **out = getChannelBuffersPointer(processSetup, *data.outputs);
-
-    if (bypass)
-    {
-        for (int32 i = 0; i < numChannels; i++)
-        {
-            if (in[i] != out[i]) {
-                memcpy(out[i], in[i], sampleFramesSize);
-            }
-        }
-        return kResultOk;
-    }
-
-    if (data.inputs[0].silenceFlags != 0)
-    {
-        data.outputs[0].silenceFlags = data.inputs[0].silenceFlags;
-        for (int32 i = 0; i < numChannels; i++)
-        {
-            if (in[i] != out[i]) {
-                memset(out[i], 0, sampleFramesSize);
-            }
-        }
-        return kResultOk;
-    }
-
-    data.outputs[0].silenceFlags = 0;
-
-    if (data.processContext) {
-        if (data.processContext->state & ProcessContext::kTempoValid) {
-            int normalizedPow = static_cast<int>(floor(saturation * 5.f));
-            normalizedPow = (normalizedPow > 4) ? 4 : normalizedPow;
-            int oscBars = pow(2, normalizedPow);
-        }
-    }
-
-    recalculateBlendRatio(saturation);
-    switch (algorithmMode) {
-        case BASS_MODE:
-            if (data.symbolicSampleSize == kSample32)
-            {
-                processAudioWithSaturation<Sample32>(data.inputs[0].channelBuffers32, data.outputs[0].channelBuffers32, data.inputs[0].numChannels, data.numSamples);
-            }
-            else
-            {
-                processAudioWithSaturation<Sample64>(reinterpret_cast<Sample64 **>(data.inputs[0].channelBuffers32), reinterpret_cast<Sample64 **>(data.outputs[0].channelBuffers32), data.inputs[0].numChannels, data.numSamples);
-            }
-            break;
-        case BEAT_MODE:
-        {
-            if (data.symbolicSampleSize == kSample32)
-            {
-                fastProcessAudio<Sample32>((Sample32 **) in, (Sample32 **) out, numChannels, data.numSamples);
-            }
-            else
-            {
-                fastProcessAudio<Sample64>((Sample64 **) in, (Sample64 **) out, numChannels, data.numSamples);
-            }
-            break;
-        }
-        case VOCAL_MODE:
-            if (data.symbolicSampleSize == kSample32)
-            {
-                processVocalWithSaturation<Sample32>(data.inputs[0].channelBuffers32, data.outputs[0].channelBuffers32, data.inputs[0].numChannels, data.numSamples);
-            }
-            else
-            {
-                processVocalWithSaturation<Sample64>(reinterpret_cast<Sample64 **>(data.inputs[0].channelBuffers32), reinterpret_cast<Sample64 **>(data.outputs[0].channelBuffers32), data.inputs[0].numChannels, data.numSamples);
-            }
-            break;
-    }
-
-    return kResultOk;
-}
-
-template<typename T>
-T BaseProcessor::clamp(T val, T minVal, T maxVal) {
-    return (val < minVal) ? minVal : (val > maxVal) ? maxVal : val;
-}
-
-template<typename T, typename U>
-T BaseProcessor::lerp(T v0, T v1, U t)
-{
-    return (1 - t) * v0 + t * v1;
-}
-
-template<typename T, typename U>
-T BaseProcessor::softTanh(T x, U softness)
-{
-    return std::tanh(x * softness);
-}
-
-float softClip(float inputSample, float drive, float mix, float threshold) {
-    // Применяем усиление
-    inputSample *= drive;
-
-    // Применяем софт-клиппинг
-    float clippedSample;
-    if (inputSample < -threshold) {
-        clippedSample = -2.0f / 3.0f;
-    } else if (inputSample > threshold) {
-        clippedSample = 2.0f / 3.0f;
-    } else {
-        // Используем арктангенс для более плавного искажения
-        clippedSample = (2.0f / M_PI) * atan(inputSample);
-        
-    }
-
-    // Смешиваем обработанный и исходный сигналы
-    float outputSample = mix * clippedSample + (1.0f - mix) * inputSample;
-
-    return outputSample;
-}
-
-template<typename SampleType>
-SampleType BaseProcessor::chebyshevHarmonics(SampleType inputSample, int order)
-{
-    SampleType outputSample = 0;
-    SampleType Tn_1 = inputSample; // T(n-1) для n=1
-    SampleType Tn = inputSample; // T(n) для n=1
-    SampleType Tn_2 = 0; // T(n-2) для n=2
-
-    // Генерация полиномов Чебышева и суммирование их вклада
-    for (int n = 1; n <= order; ++n) {
-        if (n > 1) {
-            Tn = 2 * inputSample * Tn_1 - Tn_2; // Рекурсивное вычисление T(n)
-        }
-        outputSample += Tn; // Добавляем вклад от текущего полинома
-
-        // Подготовка к следующей итерации
-        Tn_2 = Tn_1;
-        Tn_1 = Tn;
-    }
-
-    // Нормализация
-    outputSample = outputSample / order;
-
-    return outputSample;
-}
-
-template<typename SampleType>
-void BaseProcessor::processVocalWithSaturation(SampleType **in, SampleType **out, int32 numChannels, int32 sampleFrames)
-{
-    auto sysTime = std::time(nullptr);
-    float gainAmplification = fasterpow(10.0f, (gain * 10.0f) / 20.0f);
-
-    for (int32 channel = 0; channel < numChannels; channel++)
-    {
-        for (int frame = 0; frame < sampleFrames; frame++)
-        {
-            SampleType inputSample = in[channel][frame] * gainAmplification;
-            SampleType outputSample;
-
-            // Ограничиваем входной сигнал диапазоном [-1, 1]
-            inputSample = std::fmax(-1.0f, std::fmin(1.0f, inputSample));
-
-            // Применяем модифицированную tanh сатурацию
-            SampleType tanhSample = softTanh(inputSample * (saturation * 0.3f), static_cast<SampleType>(0.3)); // Мягкость tanh
-
-            // Применяем софтклипперную сатурацию
-            SampleType softClipSample = (inputSample < -1.0f) ? -2.0f / 3.0f : ((inputSample > 1.0f) ? 2.0f / 3.0f : inputSample - (inputSample * inputSample * inputSample / 3.0f));
-
-            // Применяем сатурацию с использованием полиномов Чебышева
-            SampleType chebyshevSample = chebyshevHarmonics(inputSample, 8);
-
-            // Комбинируем все вместе
-            outputSample = lerp(inputSample, saturation * 2.0f * (tanhSample * 5.0f + chebyshevSample + softClipSample), static_cast<SampleType>(saturation));
-
-            // Нормализация результата
-            outputSample = std::fmax(-1.0f, std::fmin(1.0f, outputSample));
-
-            out[channel][frame] = outputSample;
-        }
+void BaseProcessor::sendMeteringPointer() {
+    if (auto* msg = allocateMessage()) {
+        msg->setMessageID(METERING_PTR_MESSAGE);
+        msg->getAttributes()->setInt("ptr",
+            static_cast<int64>(reinterpret_cast<intptr_t>(&metering_)));
+        sendMessage(msg);
+        msg->release();
     }
 }
 
-
-template<typename SampleType>
-void BaseProcessor::processAudioWithSaturation(SampleType **in, SampleType **out, int32 numChannels, int32 sampleFrames)
-{
-    auto sysTime = std::time(nullptr);
-    float gainAmplification = fasterpow(10.0f, (gain * 10.0f) / 20.0f);
-    float drive = 1.0f;       // Уровень насыщенности
-    float mix = 0.8f;         // Процент обработанного сигнала
-    float threshold = 1.0f;   // Порог клиппинг
-
-    for (int32 channel = 0; channel < numChannels; channel++)
-    {
-        for (int frame = 0; frame < sampleFrames; frame++)
-        {
-            SampleType inputSample = in[channel][frame] * gainAmplification;
-            SampleType outputSample;
-
-            // Ограничиваем входной сигнал диапазоном [-1, 1]
-            inputSample = std::fmax(-1.0f, std::fmin(1.0f, inputSample));
-
-            // Применяем tanh сатурацию
-            SampleType tanhSample = softTanh(inputSample * saturation, static_cast<SampleType>(0.5)); // Мягкость tanh
-
-            // Применяем софтклипперную сатурацию
-            SampleType softClipSample = softClip(inputSample, drive, mix, threshold);
-
-            // Применяем сатурацию с использованием полиномов Чебышева
-            SampleType chebyshevSample = chebyshevHarmonics(inputSample, 12);
-
-            // Комбинируем все вместе
-            SampleType saturatedSample = lerp(inputSample, saturation * 4.0f * (tanhSample * 15.0f + chebyshevSample + softClipSample), static_cast<SampleType>(saturation));
-
-            // Нормализация
-            outputSample = std::fmax(-1.0f, std::fmin(1.0f, saturatedSample));
-
-            out[channel][frame] = outputSample;
-        }
-    }
-}
-
-
-template<typename SampleType>
-void BaseProcessor::fastProcessAudio(SampleType **in, SampleType **out, int32 numChannels, int32 sampleFrames)
-{
-    SampleType inputSample, tanhSample, softClipSample, saturatedSample, delayedSample, outputSample;
-    cycfi::q::rising_edge edge_detector;
-
-    float gainAmplification = fasterpow(10.0f, (gain * 10.0f) / 20.0f);
-    int currentLatencySamples = static_cast<int>(processSetup.sampleRate * latencySeconds);
-    auto sysTime = std::time(nullptr);
-    float drive = 1.0f;       // Уровень насыщенности
-    float mix = 0.8f;         // Процент обработанного сигнала
-    float threshold = 1.0f;   // Порог клиппинга
-
-    for (int32 channel = 0; channel < numChannels; channel++)
-    {
-        ringBuffer.clear();
-        SampleType last_sample = 0;
-        for (int frame = 0; frame < sampleFrames; frame++)
-        {
-            inputSample = in[channel][frame] * gainAmplification;
-
-            ringBuffer.push(inputSample);
-            inputSample = clamp<float>(inputSample, -1.0f, 1.0f);
-
-            bool is_transient = edge_detector(inputSample > last_sample);
-
-            SampleType chebyshevSample = chebyshevHarmonics(inputSample, 12);
-
-            tanhSample = softTanh(inputSample * saturation, static_cast<SampleType>(0.5));
-
-            softClipSample = softClip(inputSample, drive, mix, threshold);
-            
-            saturatedSample = lerp(inputSample, saturation * 2.0f * (tanhSample * 13.0f + chebyshevSample + softClipSample), static_cast<SampleType>(saturation));
-
-            if (ringBuffer.size() > currentLatencySamples)
-                delayedSample = ringBuffer.back();
-
-            SampleType filtredSample = highPassFilter.process(delayedSample);
-
-            outputSample = saturatedSample + (is_transient ? (delayedSample - saturatedSample) * (saturation / 2) : 0);
-
-            outputSample = clamp<float>(outputSample, -1.0f, 1.0f);
-
-            out[channel][frame] = outputSample;
-            last_sample = delayedSample;
-        }
-    }
-}
-
-/*
-template<typename SampleType>
-void BaseProcessor::fastProcessAudio(SampleType **in, SampleType **out, int32 numChannels, int32 sampleFrames, bool noise)
-{
-    SampleType transientEffect;
-    SampleType inputSample;
-    SampleType tanhSample;
-    SampleType chebyshevSample;
-    SampleType softClipSample;
-    SampleType saturatedSample;
-    SampleType delayedSample;
-    SampleType outputSample;
-    SampleType filtredSample;
-    cycfi::q::rising_edge edge_detector;
-
-    float gainAmplification = fasterpow(10.0f, (gain * 10.0f) / 20.0f);
-    int currentLatencySamples = static_cast<int>(processSetup.sampleRate * latencySeconds);  // Calculate current latency in samples
-
-    for (int32 channel = 0; channel < numChannels; channel++)
-    {
-        ringBuffer.clear();
-        SampleType last_sample = 0;
-        for (int frame = 0; frame < sampleFrames; frame++)
-        {
-            inputSample = in[channel][frame] * gainAmplification;
-
-            // Копируем входной сигнал в ринг-буфер
-            ringBuffer.push(inputSample);
-
-            // Ограничиваем входной сигнал диапазоном [-1, 1]
-            inputSample = std::fmax(-1.0f, std::fmin(1.0f, inputSample));
-
-            // Детекция транзиентов
-            bool is_transient = edge_detector(inputSample > last_sample);
-
-            SampleType chebyshevSample = chebyshevHarmonics(inputSample, 12);
-
-            // Применяем модифицированную tanh сатурацию
-            tanhSample = softTanh(chebyshevSample * saturation, static_cast<SampleType>(0.5)); // Мягкость tanh
-
-            // Применяем софтклипперную сатурацию
-            softClipSample = (tanhSample < -1.0f) ? -2.0f / 3.0f : ((tanhSample > 1.0f) ? 2.0f / 3.0f : tanhSample - (tanhSample * tanhSample * tanhSample / 3.0f));
-
-            // Комбинируем все вместе
-            //saturatedSample = lerp(inputSample, saturation * 2.0f * (tanhSample * 13.0f + softClipSample), static_cast<SampleType>(saturation));
-
-            // Нормализация результата
-            saturatedSample = std::fmax(-1.0f, std::fmin(1.0f, saturatedSample));
-
-            if (ringBuffer.size() > currentLatencySamples)
-                //delayedSample = ringBuffer[ringBuffer.size() - 1];
-                delayedSample = ringBuffer.back();
-
-            // Получаем задержанный сигнал из ринг-буфера с линейной интерполяцией
-            //delayedSample = ringBuffer.back();
-
-            //delayedSample = std::fmax(-1.0f, std::fmin(1.0f, delayedSample));
-
-            filtredSample = highPassFilter.process(delayedSample);
-
-            outputSample = saturatedSample + (is_transient ? (filtredSample - saturatedSample) * saturation/2 : 0);
-
-            outputSample = std::fmax(-1.0f, std::fmin(1.0f, outputSample));
-
-            // Запись результата
-            out[channel][frame] = outputSample;
-
-            last_sample = delayedSample;
-
-            if (channel == 0 && oscProcessor)
-            {
-                licenseCounterTime++;
-                oscProcessor->process(abs(inputSample), outputSample, filtredSample, saturatedSample, currentTime++);
-            }
-        }
-    }
-}
-*/
-
-tresult PLUGIN_API BaseProcessor::setupProcessing(ProcessSetup &newSetup) {
-
-    latency = static_cast<int>(newSetup.sampleRate * 0.002); // 0.002 = 2 ms / 1000 ms
-    if (buffers) {
-        buffers->setBuffersSize(newSetup.maxSamplesPerBlock + latency);
-    }
-
+tresult PLUGIN_API BaseProcessor::setupProcessing(ProcessSetup& newSetup) {
     newSetup.processMode = ProcessModes::kRealtime;
     processSetup = newSetup;
     return AudioEffect::setupProcessing(newSetup);
 }
 
-tresult PLUGIN_API
-BaseProcessor::canProcessSampleSize(int32 symbolicSampleSize) {
-    if (symbolicSampleSize == Vst::kSample32) {
-        return kResultTrue;
+tresult BaseProcessor::setBusArrangements(SpeakerArrangement* inputs, int32 numIns,
+                                           SpeakerArrangement* outputs, int32 numOuts) {
+    if (numIns == 1 && numOuts == 1 &&
+        inputs[0] == SpeakerArr::kStereo &&
+        outputs[0] == SpeakerArr::kStereo) {
+        return AudioEffect::setBusArrangements(inputs, numIns, outputs, numOuts);
     }
-    if (symbolicSampleSize == Vst::kSample64) {
-        return kResultTrue;
-    }
-
     return kResultFalse;
 }
 
-tresult PLUGIN_API BaseProcessor::setState(IBStream *state) {
-    if (!state) {
-        return kResultFalse;
-    }
-
-    IBStreamer streamer(state, kLittleEndian);
-
-    bool savedBypass = false;
-    if (!streamer.readBool(savedBypass))
-        return kResultFalse;
-    bypass = savedBypass;
-
-    float savedSaturation = 0.0f;
-    if (!streamer.readFloat(savedSaturation))
-        return kResultFalse;
-    saturation = savedSaturation;
-
-    int savedAlgorithm = 2;
-    if (!streamer.readInt32(savedAlgorithm))
-        return kResultFalse;
-    algorithmMode = savedAlgorithm;
-
-    float savedGain = 0.5f;
-    if (!streamer.readFloat(savedGain))
-        return kResultFalse;
-    gain = savedGain;
-
-    bool savedPhase = false;
-    if (!streamer.readBool(savedPhase))
-        return kResultFalse;
-    phaseInverse = savedPhase;
-
-    return kResultOk;
+tresult PLUGIN_API BaseProcessor::canProcessSampleSize(int32 symbolicSampleSize) {
+    if (symbolicSampleSize == kSample32)
+        return kResultTrue;
+    return kResultFalse;
 }
 
-tresult PLUGIN_API BaseProcessor::getState(IBStream *state) {
-    if (!state) return kResultFalse;
+void BaseProcessor::readParameterChanges(ProcessData& data) {
+    if (!data.inputParameterChanges)
+        return;
 
-    IBStreamer streamer(state, kLittleEndian);
-    streamer.writeBool(bypass);
-    streamer.writeFloat(saturation);
-    streamer.writeInt32(algorithmMode);
-    streamer.writeFloat(gain);
-    streamer.writeBool(phaseInverse);
-    return kResultOk;
-}
+    int32 numChanges = data.inputParameterChanges->getParameterCount();
+    for (int32 index = 0; index < numChanges; ++index) {
+        auto* queue = data.inputParameterChanges->getParameterData(index);
+        if (!queue) continue;
 
-uint32 BaseProcessor::getLatencySamples()
-{
-    return algorithmMode == BEAT_MODE ? static_cast<uint32>(latency) : 0;
-}
+        ParamValue value;
+        int32 sampleOffset;
+        int32 lastIdx = queue->getPointCount() - 1;
+        if (lastIdx < 0) continue;
+        if (queue->getPoint(lastIdx, sampleOffset, value) != kResultTrue)
+            continue;
 
-bool BaseProcessor::restartMessage()
-{
-    IPtr<IMessage> message = shared(allocateMessage());
-    if (message != nullptr) {
-        message->setMessageID(RESTART_MESSAGE);
-        if (message != nullptr && getPeer() != nullptr) {
-            return getPeer()->notify(message);
+        float v = static_cast<float>(value);
+
+        switch (queue->getParameterId()) {
+            case kBypass:        bypass_ = (v > 0.5f); break;
+            case kMode:          algorithmMode_ = std::clamp(static_cast<int>(v * 2.0f + 0.5f), 0, 2); break;
+            case kSaturation:    saturation_ = v; break;
+            case kInputGain:     inputGainNorm_ = v; break;
+            case kOutputGain:    outputGainNorm_ = v; break;
+            case kDryWet:        dryWet_ = v; break;
+            case kOversampling:  oversamplingMode_ = static_cast<int>(v * 2.0f + 0.5f); break;
+
+            case kInstLowSat:      instLowSat_ = v; break;
+            case kInstMidSat:      instMidSat_ = v; break;
+            case kInstHighSat:     instHighSat_ = v; break;
+            case kInstLowMidFreq:  instLowMidFreq_ = v; break;
+            case kInstMidHighFreq: instMidHighFreq_ = v; break;
+            case kInstCharacter:   instCharacter_ = v; break;
+
+            case kDrumTransientSens: drumTransientSens_ = v; break;
+            case kDrumAttackMs:      drumAttackMs_ = v; break;
+            case kDrumSustainSat:    drumSustainSat_ = v; break;
+            case kDrumPunch:         drumPunch_ = v; break;
+
+            case kTapeBias:       tapeBias_ = v; break;
+            case kTapeWow:        tapeWow_ = v; break;
+            case kTapeFlutter:    tapeFlutter_ = v; break;
+            case kTapeHissLevel:  tapeHissLevel_ = v; break;
+            case kTapeHeadCutoff: tapeHeadCutoff_ = v; break;
+            case kTapeSpeed:      tapeSpeed_ = v; break;
         }
     }
-    return kResultTrue;
 }
 
-tresult BaseProcessor::notify(IMessage *message)
-{
-    return ComponentBase::notify(message);
+void BaseProcessor::updateModeParams() {
+    float inGainLin = 1.0f;
+    float outGainLin = 1.0f;
+
+    // маппинг оверсемплинга: 0=выкл, 1=2x, 2=4x
+    dsp::Oversampler::Factor osFactor;
+    if (oversamplingMode_ >= 2)
+        osFactor = dsp::Oversampler::k4x;
+    else if (oversamplingMode_ >= 1)
+        osFactor = dsp::Oversampler::k2x;
+    else
+        osFactor = dsp::Oversampler::kNone;
+
+    // инструмент
+    auto& ip = instrumentMode_->params();
+    ip.saturation = saturation_;
+    ip.inputGain = inGainLin;
+    ip.outputGain = outGainLin;
+    ip.dryWet = dryWet_;
+    ip.lowSat = instLowSat_ * 2.0f;
+    ip.midSat = instMidSat_ * 2.0f;
+    ip.highSat = instHighSat_ * 2.0f;
+    ip.lowMidFreq = normToFreq(instLowMidFreq_, 50.0f, 1000.0f);
+    ip.midHighFreq = normToFreq(instMidHighFreq_, 1000.0f, 8000.0f);
+    ip.character = instCharacter_;
+    ip.osFactor = osFactor;
+
+    // ударные
+    auto& dp = drumMode_->params();
+    dp.saturation = saturation_;
+    dp.inputGain = inGainLin;
+    dp.outputGain = outGainLin;
+    dp.dryWet = dryWet_;
+    dp.transientSensitivity = drumTransientSens_;
+    dp.sustainSat = drumSustainSat_ * 2.0f;
+    dp.punch = drumPunch_;
+    dp.osFactor = osFactor;
+
+    // вокал/лента
+    auto& vp = vocalMode_->params();
+    vp.saturation = saturation_;
+    vp.inputGain = inGainLin;
+    vp.outputGain = outGainLin;
+    vp.dryWet = dryWet_;
+    vp.tapeBias = tapeBias_;
+    vp.wowAmount = tapeWow_ * 0.3f;
+    vp.flutterAmount = tapeFlutter_ * 0.2f;
+    vp.hissLevel = tapeHissLevel_;
+    vp.headCutoff = normToFreq(tapeHeadCutoff_, 4000.0f, 20000.0f);
+    vp.tapeSpeed = tapeSpeed_;
+    vp.osFactor = osFactor;
 }
 
-tresult BaseProcessor::setBusArrangements(SpeakerArrangement *inputs, int32 numIns, SpeakerArrangement *outputs, int32 numOuts)
-{
-        if (numIns == 1 && numOuts == 1 && inputs[0] == Vst::SpeakerArr::kStereo && outputs[0] == Vst::SpeakerArr::kStereo)
-        {
-            return AudioEffect::setBusArrangements(inputs, numIns, outputs, numOuts);
-	    }
+tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
+    readParameterChanges(data);
+
+    if (data.numInputs != 1 || data.numOutputs != 1)
+        return kResultOk;
+
+    int32 numChannels = data.inputs[0].numChannels;
+    uint32 sampleFramesSize = getSampleFramesSizeInBytes(processSetup, data.numSamples);
+
+    float** in = data.inputs[0].channelBuffers32;
+    float** out = data.outputs[0].channelBuffers32;
+
+    if (bypass_) {
+        for (int32 i = 0; i < numChannels; ++i) {
+            if (in[i] != out[i])
+                std::memcpy(out[i], in[i], sampleFramesSize);
+        }
+        return kResultOk;
+    }
+
+    if (data.inputs[0].silenceFlags != 0) {
+        data.outputs[0].silenceFlags = data.inputs[0].silenceFlags;
+        for (int32 i = 0; i < numChannels; ++i) {
+            if (in[i] != out[i])
+                std::memset(out[i], 0, sampleFramesSize);
+        }
+        return kResultOk;
+    }
+
+    data.outputs[0].silenceFlags = 0;
+    updateModeParams();
+
+    switch (algorithmMode_) {
+        case INSTRUMENT_MODE:
+            instrumentMode_->process(in, out, numChannels, data.numSamples);
+            break;
+        case DRUM_MODE:
+            drumMode_->process(in, out, numChannels, data.numSamples);
+            break;
+        case VOCAL_MODE:
+            vocalMode_->process(in, out, numChannels, data.numSamples);
+            break;
+    }
+
+    for (int i = 0; i < data.numSamples; ++i) {
+        float inL = in[0][i];
+        float inR = (numChannels > 1) ? in[1][i] : inL;
+        float outL = out[0][i];
+        float outR = (numChannels > 1) ? out[1][i] : outL;
+
+        metering_.pushInputSample(inL, inR);
+        metering_.pushOutputSample(outL, outR);
+    }
+
+    return kResultOk;
+}
+
+tresult PLUGIN_API BaseProcessor::setState(IBStream* state) {
+    if (!state)
         return kResultFalse;
+
+    IBStreamer streamer(state, kLittleEndian);
+
+    int32 version = 0;
+    if (!streamer.readInt32(version))
+        return kResultFalse;
+
+    if (version == 0) {
+        // совместимость с v1: поле version было bypass (0=выкл)
+        bypass_ = false;
+
+        float savedSat = 0.0f;
+        if (streamer.readFloat(savedSat)) saturation_ = savedSat;
+
+        int32 savedMode = 0;
+        if (streamer.readInt32(savedMode)) algorithmMode_ = savedMode;
+
+        float savedGain = 0.5f;
+        if (streamer.readFloat(savedGain)) {
+            inputGainNorm_ = savedGain;
+            outputGainNorm_ = 0.5f;
+        }
+        return kResultOk;
+    }
+
+    if (version >= 2) {
+        bool bp = false;
+        if (!streamer.readBool(bp)) return kResultFalse;
+        bypass_ = bp;
+
+        int32 mode = 0;
+        streamer.readInt32(mode);
+        algorithmMode_ = std::clamp(mode, 0, 2);
+
+        streamer.readFloat(saturation_);
+        streamer.readFloat(inputGainNorm_);
+        streamer.readFloat(outputGainNorm_);
+        streamer.readFloat(dryWet_);
+
+        int32 os = 0;
+        streamer.readInt32(os);
+        oversamplingMode_ = os;
+
+        streamer.readFloat(instLowSat_);
+        streamer.readFloat(instMidSat_);
+        streamer.readFloat(instHighSat_);
+        streamer.readFloat(instLowMidFreq_);
+        streamer.readFloat(instMidHighFreq_);
+        streamer.readFloat(instCharacter_);
+
+        streamer.readFloat(drumTransientSens_);
+        streamer.readFloat(drumAttackMs_);
+        streamer.readFloat(drumSustainSat_);
+        streamer.readFloat(drumPunch_);
+
+        streamer.readFloat(tapeBias_);
+        streamer.readFloat(tapeWow_);
+        streamer.readFloat(tapeFlutter_);
+        streamer.readFloat(tapeHissLevel_);
+        streamer.readFloat(tapeHeadCutoff_);
+        streamer.readFloat(tapeSpeed_);
+    }
+
+    return kResultOk;
 }
 
-template<typename SampleType>
-SampleType BaseProcessor::cosCos(SampleType val, double coef) {
-    if (coef > 1.0) coef = 1.0;
-    if (coef < 0.0) coef = 0.0;
-    double invCoef = 1.0 - coef;
-    invCoef = 0.2 + (invCoef * 0.45);
-    return fasterpow(invCoef, 4.35) + fastercos(fastercos(val) * invCoef * 2.65);
+tresult PLUGIN_API BaseProcessor::getState(IBStream* state) {
+    if (!state)
+        return kResultFalse;
+
+    IBStreamer streamer(state, kLittleEndian);
+
+    streamer.writeInt32(2);
+    streamer.writeBool(bypass_);
+    streamer.writeInt32(algorithmMode_);
+    streamer.writeFloat(saturation_);
+    streamer.writeFloat(inputGainNorm_);
+    streamer.writeFloat(outputGainNorm_);
+    streamer.writeFloat(dryWet_);
+    streamer.writeInt32(oversamplingMode_);
+
+    streamer.writeFloat(instLowSat_);
+    streamer.writeFloat(instMidSat_);
+    streamer.writeFloat(instHighSat_);
+    streamer.writeFloat(instLowMidFreq_);
+    streamer.writeFloat(instMidHighFreq_);
+    streamer.writeFloat(instCharacter_);
+
+    streamer.writeFloat(drumTransientSens_);
+    streamer.writeFloat(drumAttackMs_);
+    streamer.writeFloat(drumSustainSat_);
+    streamer.writeFloat(drumPunch_);
+
+    streamer.writeFloat(tapeBias_);
+    streamer.writeFloat(tapeWow_);
+    streamer.writeFloat(tapeFlutter_);
+    streamer.writeFloat(tapeHissLevel_);
+    streamer.writeFloat(tapeHeadCutoff_);
+    streamer.writeFloat(tapeSpeed_);
+
+    return kResultOk;
 }
 
-void BaseProcessor::recalculateBlendRatio(double ratio) {
-    calculatedRatio = fasterpow(ratio, 0.2);
+uint32 BaseProcessor::getLatencySamples() {
+    if (algorithmMode_ == DRUM_MODE && drumMode_) {
+        return static_cast<uint32>(drumMode_->getLatencySamples());
+    }
+    return 0;
 }
 
-template<typename SampleType>
-SampleType BaseProcessor::blend(SampleType signal1, SampleType signal2) {
-    return (1.0 - calculatedRatio) * signal1 + calculatedRatio * signal2;
-}
-
-float BaseProcessor::randFloat()
-{
-    return (static_cast <float> (rand()) / static_cast <float> (RAND_MAX)) / 2.0f;
+tresult PLUGIN_API BaseProcessor::notify(IMessage* message) {
+    return ComponentBase::notify(message);
 }

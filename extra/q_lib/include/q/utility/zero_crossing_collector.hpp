@@ -1,5 +1,5 @@
 /*=============================================================================
-   Copyright (c) 2014-2023 Joel de Guzman. All rights reserved.
+   Copyright (c) 2014-2024 Joel de Guzman. All rights reserved.
 
    Distributed under the MIT License [ https://opensource.org/licenses/MIT ]
 =============================================================================*/
@@ -10,6 +10,7 @@
 #include <q/utility/bitset.hpp>
 #include <q/utility/ring_buffer.hpp>
 #include <q/support/decibel.hpp>
+#include <q/support/frequency.hpp>
 #include <infra/assert.hpp>
 #include <cmath>
 

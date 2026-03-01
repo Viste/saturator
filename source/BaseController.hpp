@@ -1,64 +1,36 @@
-#ifndef FIRST_BASECONTROLLER_H
-#define FIRST_BASECONTROLLER_H
+#pragma once
 
+#include "dsp/MeteringData.hpp"
 #include "public.sdk/source/vst/vsteditcontroller.h"
-#include "subcontrollers/ModeSwitchController.hpp"
-#include <vstgui/plugin-bindings/vst3editor.h>
 
-using namespace Steinberg;
-using namespace Steinberg::Vst;
+namespace gui { class ImGuiPlugView; }
 
-struct BaseController : public EditController,
-                        public VST3EditorDelegate {
-
+class BaseController : public Steinberg::Vst::EditController {
+public:
     BaseController();
+    ~BaseController() override = default;
 
-    ~BaseController() SMTG_OVERRIDE = default;
-
-    static FUnknown *createInstance(void * /*context*/) {
-        return (IEditController *) new BaseController;
+    static Steinberg::FUnknown* createInstance(void*) {
+        return static_cast<Steinberg::Vst::IEditController*>(new BaseController);
     }
 
-    tresult PLUGIN_API initialize(FUnknown *context) SMTG_OVERRIDE;
+    Steinberg::tresult PLUGIN_API initialize(Steinberg::FUnknown* context) override;
+    Steinberg::tresult PLUGIN_API terminate() override;
+    Steinberg::tresult PLUGIN_API setComponentState(Steinberg::IBStream* state) override;
+    Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override;
 
+    Steinberg::tresult PLUGIN_API setParamNormalized(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue value) override;
+    Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue valueNormalized, Steinberg::Vst::String128 string) override;
+    Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID tag, Steinberg::Vst::TChar* string, Steinberg::Vst::ParamValue& valueNormalized) override;
 
-    tresult PLUGIN_API terminate() SMTG_OVERRIDE;
+    Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message) override;
 
-    tresult PLUGIN_API setComponentState(IBStream *state) SMTG_OVERRIDE;
-
-    IPlugView *PLUGIN_API createView(FIDString name) SMTG_OVERRIDE;
-
-    tresult PLUGIN_API setParamNormalized(
-            ParamID tag,
-            ParamValue value
-    ) SMTG_OVERRIDE;
-
-    tresult PLUGIN_API getParamStringByValue(
-            ParamID tag,
-            ParamValue valueNormalized,
-            String128 string
-    ) SMTG_OVERRIDE;
-
-    tresult PLUGIN_API getParamValueByString(
-            ParamID tag,
-            TChar *string,
-            ParamValue &valueNormalized
-    ) SMTG_OVERRIDE;
-
-    IController *createSubController(
-            const char *name,
-            const IUIDescription *description,
-            VST3Editor *editor
-    ) override;
-
-    tresult PLUGIN_API notify(IMessage *message) SMTG_OVERRIDE;
+    void viewRemoved(gui::ImGuiPlugView* view);
 
     OBJ_METHODS(BaseController, EditController)
-
     REFCOUNT_METHODS(EditController)
 
 private:
-
+    dsp::MeteringData* meteringData_ = nullptr;
+    gui::ImGuiPlugView* activeView_ = nullptr;
 };
-
-#endif // FIRST_BASECONTROLLER_H

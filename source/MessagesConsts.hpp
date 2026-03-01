@@ -1,8 +1,5 @@
-#ifndef SATURATOR_DEMO_MESSAGESCONSTS_H
-#define SATURATOR_DEMO_MESSAGESCONSTS_H
+#pragma once
 
-#include <string>
+#include <pluginterfaces/base/ftypes.h>
 
-static FIDString RESTART_MESSAGE = "restart";
-
-#endif // SATURATOR_DEMO_MESSAGESCONSTS_H
+inline constexpr Steinberg::FIDString METERING_PTR_MESSAGE = "meteringPtr";

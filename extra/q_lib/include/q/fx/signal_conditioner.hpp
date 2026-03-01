@@ -1,5 +1,5 @@
 /*=============================================================================
-   Copyright (c) 2014-2023 Joel de Guzman. All rights reserved.
+   Copyright (c) 2014-2024 Joel de Guzman. All rights reserved.
 
    Distributed under the MIT License [ https://opensource.org/licenses/MIT ]
 =============================================================================*/
@@ -36,7 +36,7 @@ namespace cycfi::q
 
          // Gate
          duration             attack_width            = 500_us;
-         decibel              gate_onset_threshold    = -33_dB;
+         decibel              gate_onset_threshold    = -45_dB;
          decibel              gate_release_threshold  = -55_dB;
          duration             gate_release            = 10_ms;
       };
@@ -66,6 +66,7 @@ namespace cycfi::q
       highpass                _hp;
       dynamic_smoother        _sm;
       fast_envelope_follower  _env;
+      peak_envelope_follower  _env_lp;
       float                   _post_env;
       compressor              _comp;
       float                   _makeup_gain;
@@ -87,6 +88,7 @@ namespace cycfi::q
     , _hp{lowest_freq, sps}
     , _sm{lowest_freq + ((highest_freq - lowest_freq) / 2), sps}
     , _env{lowest_freq.period()*0.6, sps}
+    , _env_lp{lowest_freq.period(), sps}
     , _comp{conf.comp_threshold, conf.comp_slope}
     , _makeup_gain{conf.comp_gain}
     , _gate{
@@ -110,7 +112,7 @@ namespace cycfi::q
       s = _sm(s);
 
       // Signal envelope
-      auto env = _env(std::abs(s));
+      auto env = _env_lp(_env(std::abs(s)));
 
       // Noise gate
       auto gate = _gate(env);
@@ -137,7 +139,7 @@ namespace cycfi::q
 
    inline float signal_conditioner::pre_env() const
    {
-      return _env();
+      return _env_lp();
    }
 
    inline float signal_conditioner::signal_env() const

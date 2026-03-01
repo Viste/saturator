@@ -1,125 +1,214 @@
 #include "BaseController.hpp"
-#include "MessagesConsts.hpp"
 #include "PluginIds.hpp"
-#include "subcontrollers/MainKnobController.hpp"
-#include "views/CustomVST3Editor.hpp"
+#include "MessagesConsts.hpp"
+#include "gui/ImGuiPlugView.hpp"
 #include <base/source/fstreamer.h>
+#include <pluginterfaces/base/ustring.h>
+#include <cmath>
+#include <algorithm>
+#include <cstring>
 
-BaseController::BaseController() {}
+using namespace Steinberg;
+using namespace Steinberg::Vst;
 
-tresult PLUGIN_API BaseController::initialize(FUnknown *context) {
+BaseController::BaseController() = default;
+
+tresult PLUGIN_API BaseController::initialize(FUnknown* context) {
     tresult result = EditController::initialize(context);
-    if (result != kResultOk) {
+    if (result != kResultOk)
         return result;
-    }
 
-    EditController::setKnobMode(Vst::kLinearMode);
+    EditController::setKnobMode(kLinearMode);
 
+    // глобальные
     parameters.addParameter(STR16("Bypass"), nullptr, 1, 0,
-                            ParameterInfo::kCanAutomate | ParameterInfo::kIsBypass, Params::kBypass);
+                            ParameterInfo::kCanAutomate | ParameterInfo::kIsBypass, kBypass);
 
-    parameters.addParameter(STR16("Saturation"), nullptr, 0, 0.0f,
-                        ParameterInfo::kCanAutomate, Params::kSaturation);
+    auto* modeParam = new StringListParameter(STR16("Mode"), kMode);
+    modeParam->appendString(STR16("Instrument"));
+    modeParam->appendString(STR16("Drums"));
+    modeParam->appendString(STR16("Vocal"));
+    parameters.addParameter(modeParam);
 
-    parameters.addParameter(STR16("Switch"), nullptr, 0, 0.0f,
-                            ParameterInfo::kNoFlags, Params::kSwitch);
+    parameters.addParameter(STR16("Saturation"), STR16("%"), 0, 0.0,
+                            ParameterInfo::kCanAutomate, kSaturation);
 
-    parameters.addParameter(STR16("Gain"), nullptr, 0, 0.5f,
-                        ParameterInfo::kCanAutomate, Params::kGain);
+    parameters.addParameter(STR16("Input Gain"), STR16("dB"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kInputGain);
 
-    parameters.addParameter(STR16("death"), nullptr, 1, 0,
-                            ParameterInfo::kCanAutomate, Params::kDeath);
+    parameters.addParameter(STR16("Output Gain"), STR16("dB"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kOutputGain);
 
-    return result;
+    parameters.addParameter(STR16("Dry/Wet"), STR16("%"), 0, 1.0,
+                            ParameterInfo::kCanAutomate, kDryWet);
+
+    auto* osParam = new StringListParameter(STR16("Oversampling"), kOversampling);
+    osParam->appendString(STR16("Off"));
+    osParam->appendString(STR16("2x"));
+    osParam->appendString(STR16("4x"));
+    parameters.addParameter(osParam);
+
+    // инструмент
+    parameters.addParameter(STR16("Low Band Sat"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kInstLowSat);
+    parameters.addParameter(STR16("Mid Band Sat"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kInstMidSat);
+    parameters.addParameter(STR16("High Band Sat"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kInstHighSat);
+    parameters.addParameter(STR16("Low-Mid Freq"), STR16("Hz"), 0, 0.3,
+                            ParameterInfo::kCanAutomate, kInstLowMidFreq);
+    parameters.addParameter(STR16("Mid-High Freq"), STR16("Hz"), 0, 0.3,
+                            ParameterInfo::kCanAutomate, kInstMidHighFreq);
+    parameters.addParameter(STR16("Character"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kInstCharacter);
+
+    // ударные
+    parameters.addParameter(STR16("Transient Sens"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kDrumTransientSens);
+    parameters.addParameter(STR16("Attack"), STR16("ms"), 0, 0.25,
+                            ParameterInfo::kCanAutomate, kDrumAttackMs);
+    parameters.addParameter(STR16("Sustain Sat"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kDrumSustainSat);
+    parameters.addParameter(STR16("Punch"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kDrumPunch);
+
+    // вокал/лента
+    parameters.addParameter(STR16("Tape Bias"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kTapeBias);
+    parameters.addParameter(STR16("Wow"), STR16("%"), 0, 0.3,
+                            ParameterInfo::kCanAutomate, kTapeWow);
+    parameters.addParameter(STR16("Flutter"), STR16("%"), 0, 0.2,
+                            ParameterInfo::kCanAutomate, kTapeFlutter);
+    parameters.addParameter(STR16("Hiss Level"), STR16("%"), 0, 0.0,
+                            ParameterInfo::kCanAutomate, kTapeHissLevel);
+    parameters.addParameter(STR16("Head Cutoff"), STR16("Hz"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kTapeHeadCutoff);
+    parameters.addParameter(STR16("Tape Speed"), STR16("%"), 0, 0.5,
+                            ParameterInfo::kCanAutomate, kTapeSpeed);
+
+    return kResultOk;
 }
 
 tresult PLUGIN_API BaseController::terminate() {
     return EditController::terminate();
 }
 
-tresult PLUGIN_API BaseController::setComponentState(IBStream *state) {
+tresult PLUGIN_API BaseController::setComponentState(IBStream* state) {
     if (!state)
         return kResultFalse;
 
     IBStreamer streamer(state, kLittleEndian);
 
-    bool bypass = false;
-    if (!streamer.readBool(bypass))
+    int32 version = 0;
+    if (!streamer.readInt32(version))
         return kResultFalse;
-    setParamNormalized(Params::kBypass, bypass ? 1.0f : 0.0f);
 
-    float saturation = 0.0f;
-    if (!streamer.readFloat(saturation))
-        return kResultFalse;
-    setParamNormalized(Params::kSaturation, saturation);
-    
-    float gain = 0.5f;
-    if (!streamer.readFloat(gain))
-        return kResultFalse;
-    setParamNormalized(Params::kGain, gain);
+    if (version == 0) {
+        // совместимость с v1
+        setParamNormalized(kBypass, 0.0);
 
-    int algorithm = 0;
-    if (!streamer.readInt32(algorithm))
-        return kResultFalse;
-    setParamNormalized(Params::kSwitch, static_cast<float>(algorithm) / 1.0f);
+        float sat = 0.0f;
+        if (streamer.readFloat(sat)) setParamNormalized(kSaturation, sat);
 
-    bool death = false;
-    if (!streamer.readBool(death))
-        return kResultFalse;
-    setParamNormalized(Params::kDeath, death ? 1.0f : 0.0f);
+        int32 mode = 0;
+        if (streamer.readInt32(mode)) setParamNormalized(kMode, static_cast<double>(mode) / 2.0);
+
+        float gain = 0.5f;
+        if (streamer.readFloat(gain)) {
+            setParamNormalized(kInputGain, gain);
+            setParamNormalized(kOutputGain, 0.5);
+        }
+        return kResultOk;
+    }
+
+    if (version >= 2) {
+        bool bp = false;
+        if (streamer.readBool(bp)) setParamNormalized(kBypass, bp ? 1.0 : 0.0);
+
+        int32 mode = 0;
+        if (streamer.readInt32(mode)) setParamNormalized(kMode, static_cast<double>(mode) / 2.0);
+
+        float val;
+        if (streamer.readFloat(val)) setParamNormalized(kSaturation, val);
+        if (streamer.readFloat(val)) setParamNormalized(kInputGain, val);
+        if (streamer.readFloat(val)) setParamNormalized(kOutputGain, val);
+        if (streamer.readFloat(val)) setParamNormalized(kDryWet, val);
+
+        int32 os = 0;
+        if (streamer.readInt32(os)) setParamNormalized(kOversampling, static_cast<double>(os) / 2.0);
+
+        if (streamer.readFloat(val)) setParamNormalized(kInstLowSat, val);
+        if (streamer.readFloat(val)) setParamNormalized(kInstMidSat, val);
+        if (streamer.readFloat(val)) setParamNormalized(kInstHighSat, val);
+        if (streamer.readFloat(val)) setParamNormalized(kInstLowMidFreq, val);
+        if (streamer.readFloat(val)) setParamNormalized(kInstMidHighFreq, val);
+        if (streamer.readFloat(val)) setParamNormalized(kInstCharacter, val);
+
+        if (streamer.readFloat(val)) setParamNormalized(kDrumTransientSens, val);
+        if (streamer.readFloat(val)) setParamNormalized(kDrumAttackMs, val);
+        if (streamer.readFloat(val)) setParamNormalized(kDrumSustainSat, val);
+        if (streamer.readFloat(val)) setParamNormalized(kDrumPunch, val);
+
+        if (streamer.readFloat(val)) setParamNormalized(kTapeBias, val);
+        if (streamer.readFloat(val)) setParamNormalized(kTapeWow, val);
+        if (streamer.readFloat(val)) setParamNormalized(kTapeFlutter, val);
+        if (streamer.readFloat(val)) setParamNormalized(kTapeHissLevel, val);
+        if (streamer.readFloat(val)) setParamNormalized(kTapeHeadCutoff, val);
+        if (streamer.readFloat(val)) setParamNormalized(kTapeSpeed, val);
+    }
 
     return kResultOk;
 }
 
-IPlugView *PLUGIN_API BaseController::createView(FIDString name) {
-    if (FIDStringsEqual(name, Vst::ViewType::kEditor)) {
-#ifdef WIN32
-        return new VST3Editor(this, "view", "layout.uidesc");
-#elif defined(__APPLE__)
-        return new CustomVST3Editor(this, "view", "layout.uidesc");
-#endif
+IPlugView* PLUGIN_API BaseController::createView(FIDString name) {
+    if (FIDStringsEqual(name, ViewType::kEditor)) {
+        auto* view = new gui::ImGuiPlugView(this);
+        activeView_ = view;
 
+        if (meteringData_) {
+            view->getUIState().metering = meteringData_;
+        }
+
+        return view;
     }
     return nullptr;
 }
 
-
-tresult PLUGIN_API BaseController::setParamNormalized(Vst::ParamID tag,
-                                                      Vst::ParamValue value) {
-    tresult result = EditController::setParamNormalized(tag, value);
-    return result;
+void BaseController::viewRemoved(gui::ImGuiPlugView* view) {
+    if (activeView_ == view) {
+        activeView_ = nullptr;
+    }
 }
 
+tresult PLUGIN_API BaseController::setParamNormalized(ParamID tag, ParamValue value) {
+    return EditController::setParamNormalized(tag, value);
+}
 
 tresult PLUGIN_API BaseController::getParamStringByValue(
-        Vst::ParamID tag, Vst::ParamValue valueNormalized, Vst::String128 string) {
+    ParamID tag, ParamValue valueNormalized, String128 string) {
     return EditController::getParamStringByValue(tag, valueNormalized, string);
 }
 
-
 tresult PLUGIN_API BaseController::getParamValueByString(
-        Vst::ParamID tag, Vst::TChar *string, Vst::ParamValue &valueNormalized) {
+    ParamID tag, TChar* string, ParamValue& valueNormalized) {
     return EditController::getParamValueByString(tag, string, valueNormalized);
 }
 
-IController *BaseController::createSubController(
-        const char *name,
-        const IUIDescription *description,
-        VST3Editor *editor
-) {
-    if (strcmp(name, "KnobController") == 0) {
-        return new MainKnobController(editor);
-    }
-    if (strcmp(name, "MainController") == 0) {
-        return new ModeSwitchController(editor);
-    }
-    if (strcmp(name, "OscKnobController") == 0) {
-        return new MainKnobController(editor);
-    }
-    return nullptr;
-}
+tresult PLUGIN_API BaseController::notify(IMessage* message) {
+    if (!message)
+        return kInvalidArgument;
 
-tresult PLUGIN_API BaseController::notify(IMessage *message) 
-{
+    if (strcmp(message->getMessageID(), METERING_PTR_MESSAGE) == 0) {
+        int64 ptrVal = 0;
+        if (message->getAttributes()->getInt("ptr", ptrVal) == kResultTrue) {
+            meteringData_ = reinterpret_cast<dsp::MeteringData*>(static_cast<intptr_t>(ptrVal));
+
+            if (activeView_) {
+                activeView_->getUIState().metering = meteringData_;
+            }
+        }
+        return kResultOk;
+    }
+
     return ComponentBase::notify(message);
 }
