@@ -1,8 +1,10 @@
+#define _USE_MATH_DEFINES
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "Widgets.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace gui::widgets {

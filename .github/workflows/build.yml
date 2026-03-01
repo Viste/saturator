@@ -55,14 +55,14 @@ jobs:
 
     - name: Patch VST3 SDK (threadchecker_mac.mm)
       run: |
-        TCFILE="/tmp/vst3sdk/base/thread/source/flock_mac.mm"
-        if [ -f "$TCFILE" ] && ! grep -q '#include <exception>' "$TCFILE"; then
-          sed -i '' '1s/^/#include <exception>\n/' "$TCFILE"
-        fi
-        TCFILE2="/tmp/vst3sdk/base/thread/source/threadchecker_mac.mm"
-        if [ -f "$TCFILE2" ] && ! grep -q '#include <exception>' "$TCFILE2"; then
-          sed -i '' '1s/^/#include <exception>\n/' "$TCFILE2"
-        fi
+        for f in \
+          /tmp/vst3sdk/public.sdk/source/common/threadchecker_mac.mm \
+          /tmp/vst3sdk/base/thread/source/flock_mac.mm \
+          /tmp/vst3sdk/base/thread/source/threadchecker_mac.mm; do
+          if [ -f "$f" ] && ! grep -q '#include <exception>' "$f"; then
+            sed -i '' '1s/^/#include <exception>\n/' "$f"
+          fi
+        done
 
     - name: Configure CMake
       run: |

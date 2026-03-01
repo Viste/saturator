@@ -1,4 +1,5 @@
 #include "VocalMode.hpp"
+#define _USE_MATH_DEFINES
 #include <algorithm>
 #include <cmath>
 
