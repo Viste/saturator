@@ -12,7 +12,7 @@ set(SMTG_CREATE_PLUGIN_LINK OFF)
 set(SMTG_ENABLE_VSTGUI_SUPPORT OFF)
 
 project(Saturator
-    VERSION 2.0.0
+    VERSION 2.0.1
     DESCRIPTION "Saturator VST 3 Plug-in"
 )
 

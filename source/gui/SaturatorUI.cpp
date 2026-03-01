@@ -60,7 +60,7 @@ void SaturatorUI::render(UIState& state) {
         dl->AddText(ImVec2(pp.x + 10, pp.y + 6),
                     IM_COL32(195, 180, 145, 255), s.title);
 
-        const char* brand = "v2.0  VISTE";
+        const char* brand = "v2.0.1 Viste";
         ImVec2 bs = ImGui::CalcTextSize(brand);
         float brandX = pp.x + plateW - bs.x - 10;
         dl->AddText(ImVec2(brandX, pp.y + 6),

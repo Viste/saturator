@@ -4,7 +4,7 @@
 #include "Version.h"
 #include "public.sdk/source/main/pluginfactory.h"
 
-#define stringPluginName "Saturator 2.0"
+#define stringPluginName "Saturator"
 
 BEGIN_FACTORY_DEF ("dev-vlab",
                    "https://dev-vlab.ru/",
