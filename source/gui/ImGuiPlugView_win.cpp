@@ -126,6 +126,17 @@ bool ImGuiPlugView::platformInit(void* parentWindow) {
     style.Colors[ImGuiCol_FrameBg] = ImVec4(0.18f, 0.18f, 0.22f, 1.0f);
     style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.45f, 0.55f, 0.85f, 1.0f);
 
+    {
+        ImFontConfig fontCfg;
+        fontCfg.OversampleH = 2;
+        fontCfg.OversampleV = 1;
+        const ImWchar* cyrillicRanges = io.Fonts->GetGlyphRangesCyrillic();
+        if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf",
+                                           15.0f, &fontCfg, cyrillicRanges)) {
+            io.Fonts->AddFontDefault();
+        }
+    }
+
     ImGui_ImplWin32_Init(data->hwnd);
     ImGui_ImplOpenGL3_Init("#version 130");
 

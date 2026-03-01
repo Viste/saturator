@@ -29,18 +29,33 @@ jobs:
     - name: Build
       run: cmake --build build --config Release --parallel
 
-    - name: Package VST3
+    - name: Package VST3 (zip)
       shell: bash
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         echo "Found: $VST3_PATH"
         7z a Saturator-Windows-x64.zip "./$VST3_PATH/*"
 
-    - name: Upload artifact
+    - name: Build Installer (Inno Setup)
+      shell: bash
+      run: |
+        VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
+        VERSION=${GITHUB_REF_NAME#v}
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.0.0"; fi
+        iscc //DAppVersion="$VERSION" //DVst3Source="$(cygpath -w "$VST3_PATH")" \
+             //O"." installer/saturator.iss
+
+    - name: Upload artifact (zip)
       uses: actions/upload-artifact@v4
       with:
         name: Saturator-Windows-x64
         path: Saturator-Windows-x64.zip
+
+    - name: Upload artifact (installer)
+      uses: actions/upload-artifact@v4
+      with:
+        name: Saturator-Windows-x64-Setup
+        path: Saturator-*-Setup.exe
 
   build-macos:
     runs-on: macos-latest
@@ -103,4 +118,5 @@ jobs:
         generate_release_notes: true
         files: |
           Saturator-Windows-x64/Saturator-Windows-x64.zip
+          Saturator-Windows-x64-Setup/Saturator-*-Setup.exe
           Saturator-macOS-arm64/Saturator-macOS-arm64.zip

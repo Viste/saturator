@@ -2,6 +2,7 @@
 
 #include "../dsp/MeteringData.hpp"
 #include "../PluginIds.hpp"
+#include "Locale.hpp"
 #include <public.sdk/source/vst/vsteditcontroller.h>
 
 namespace gui {
@@ -12,6 +13,7 @@ struct UIState {
 
     bool advancedOpen = false;
     int requestedHeight = 0;
+    Lang lang = Lang::RU;
 
     int currentMode() const {
         if (!controller) return 0;

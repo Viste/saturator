@@ -14,6 +14,7 @@ struct MeteringData {
 
     std::atomic<float> inputPeak{0.0f};
     std::atomic<float> outputPeak{0.0f};
+    std::atomic<float> sampleRate{44100.0f};
 
     struct WaveformBuffer {
         std::array<float, kWaveformSize> samples{};

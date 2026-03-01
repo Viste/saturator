@@ -1,5 +1,6 @@
 #include "SaturatorUI.hpp"
 #include "Widgets.hpp"
+#include "Locale.hpp"
 #include "../PluginIds.hpp"
 #include <imgui.h>
 #include <cstdio>
@@ -42,6 +43,9 @@ void SaturatorUI::render(UIState& state) {
 
     widgets::DrawBackground(ImVec2(0, 0), ws);
 
+    setLocale(state.lang);
+    const auto& s = locale();
+
     float pad = 22.0f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
@@ -54,20 +58,33 @@ void SaturatorUI::render(UIState& state) {
                     IM_COL32(65, 62, 55, 255), 2.0f, 0, 1.0f);
 
         dl->AddText(ImVec2(pp.x + 10, pp.y + 6),
-                    IM_COL32(195, 180, 145, 255), "\xd0\xa1\xd0\x90\xd0\xa2\xd0\xa3\xd0\xa0\xd0\x90\xd0\xa2\xd0\x9e\xd0\xa0");
+                    IM_COL32(195, 180, 145, 255), s.title);
 
         const char* brand = "v2.0  VISTE";
         ImVec2 bs = ImGui::CalcTextSize(brand);
-        dl->AddText(ImVec2(pp.x + plateW - bs.x - 10, pp.y + 6),
+        float brandX = pp.x + plateW - bs.x - 10;
+        dl->AddText(ImVec2(brandX, pp.y + 6),
                     IM_COL32(110, 105, 92, 255), brand);
+
+        // RU / EN toggle
+        float langX = brandX - 52;
+        bool isRu = (state.lang == Lang::RU);
+        ImU32 ruCol = isRu ? IM_COL32(195, 180, 145, 255) : IM_COL32(80, 76, 68, 255);
+        ImU32 enCol = isRu ? IM_COL32(80, 76, 68, 255) : IM_COL32(195, 180, 145, 255);
+        dl->AddText(ImVec2(langX, pp.y + 6), ruCol, "RU");
+        dl->AddText(ImVec2(langX + 18, pp.y + 6), IM_COL32(60, 57, 50, 255), "/");
+        dl->AddText(ImVec2(langX + 26, pp.y + 6), enCol, "EN");
+
+        ImVec2 langMin(langX, pp.y);
+        ImVec2 langMax(langX + 44, pp.y + 28);
+        if (ImGui::IsMouseHoveringRect(langMin, langMax) && ImGui::IsMouseClicked(0)) {
+            state.lang = isRu ? Lang::EN : Lang::RU;
+        }
     }
 
     float modeY = pad + 34;
-    // ИНСТРУМЕНТ, УДАРНЫЕ, ВОКАЛ/ЛЕНТА
-    static const char* modeNames[] = {
-        "\xd0\x98\xd0\x9d\xd0\xa1\xd0\xa2\xd0\xa0\xd0\xa3\xd0\x9c\xd0\x95\xd0\x9d\xd0\xa2",
-        "\xd0\xa3\xd0\x94\xd0\x90\xd0\xa0\xd0\x9d\xd0\xab\xd0\x95",
-        "\xd0\x92\xd0\x9e\xd0\x9a\xd0\x90\xd0\x9b/\xd0\x9b\xd0\x95\xd0\x9d\xd0\xa2\xd0\x90"
+    const char* modeNames[] = {
+        s.modeInstrument, s.modeDrums, s.modeVocal
     };
     int mode = state.currentMode();
     float modeW = 110 * 3 + 3 * 2;
@@ -77,11 +94,10 @@ void SaturatorUI::render(UIState& state) {
         setParam(state, kMode, static_cast<float>(mode) / 2.0f);
     }
 
-    // ДОП
     float advX = modeCenterX + modeW + 10;
     ImGui::SetCursorPos(ImVec2(advX, modeY));
     bool prevAdv = state.advancedOpen;
-    widgets::ToggleButton("\xd0\x94\xd0\x9e\xd0\x9f", &state.advancedOpen, 50.0f, 28.0f);
+    widgets::ToggleButton(s.advToggle, &state.advancedOpen, 50.0f, 28.0f);
 
     if (state.advancedOpen != prevAdv) {
         state.requestedHeight = state.advancedOpen ? kOpenHeight : kClosedHeight;
@@ -90,19 +106,17 @@ void SaturatorUI::render(UIState& state) {
     float ctrlY = modeY + 34;
     float knobSize = 90.0f;
 
-    // ДРАЙВ
     float driveX = pad + 20;
     ImGui::SetCursorPos(ImVec2(driveX, ctrlY));
     float saturation = getParam(state, kSaturation);
-    if (widgets::Knob("\xd0\x94\xd0\xa0\xd0\x90\xd0\x99\xd0\x92", &saturation, 0.0f, 1.0f, 0.0f, knobSize, true)) {
+    if (widgets::Knob(s.drive, &saturation, 0.0f, 1.0f, 0.0f, knobSize, true)) {
         setParam(state, kSaturation, saturation);
     }
 
-    // МИКС
     float mixX = driveX + knobSize + 30;
     ImGui::SetCursorPos(ImVec2(mixX, ctrlY));
     float dryWet = getParam(state, kDryWet);
-    if (widgets::Knob("\xd0\x9c\xd0\x98\xd0\x9a\xd0\xa1", &dryWet, 0.0f, 1.0f, 1.0f, knobSize, true)) {
+    if (widgets::Knob(s.mix, &dryWet, 0.0f, 1.0f, 1.0f, knobSize, true)) {
         setParam(state, kDryWet, dryWet);
     }
 
@@ -121,26 +135,27 @@ void SaturatorUI::render(UIState& state) {
         ImGui::SetCursorPos(ImVec2(meterX + 16, ctrlY));
         widgets::LevelMeter("Out", outLvl, 10.0f, meterH);
 
-        // Вх Вых
         dl->AddText(ImVec2(meterX - 4, ctrlY + meterH + 2),
-                    IM_COL32(110, 105, 92, 255),
-                    "\xd0\x92\xd1\x85 \xd0\x92\xd1\x8b\xd1\x85");
+                    IM_COL32(110, 105, 92, 255), s.inOut);
     }
 
-    float specX = meterX + 40;
-    float specW = ws.x - specX - pad;
-    if (specW < 80) specW = 80;
-    float specH = knobSize + 20;
-    ImGui::SetCursorPos(ImVec2(specX, ctrlY));
+    // осциллограмма
+    float wfSmallX = meterX + 40;
+    float wfSmallW = ws.x - wfSmallX - pad;
+    if (wfSmallW < 80) wfSmallW = 80;
+    float wfSmallH = knobSize + 20;
+    ImGui::SetCursorPos(ImVec2(wfSmallX, ctrlY));
     if (state.metering) {
-        widgets::SpectrumDisplay("\xd0\xa1\xd0\x9f\xd0\x95\xd0\x9a\xd0\xa2\xd0\xa0",
+        widgets::WaveformOverlay(s.signal,
+            state.metering->inputWaveform.samples.data(),
             state.metering->outputWaveform.samples.data(),
             dsp::MeteringData::kWaveformSize,
+            state.metering->inputWaveform.writePos.load(std::memory_order_relaxed),
             state.metering->outputWaveform.writePos.load(std::memory_order_relaxed),
-            ImVec2(specW, specH));
+            ImVec2(wfSmallW, wfSmallH));
     } else {
-        widgets::SpectrumDisplay("\xd0\xa1\xd0\x9f\xd0\x95\xd0\x9a\xd0\xa2\xd0\xa0",
-            nullptr, 0, 0, ImVec2(specW, specH));
+        widgets::WaveformOverlay(s.signal,
+            nullptr, nullptr, 0, 0, 0, ImVec2(wfSmallW, wfSmallH));
     }
 
     float advPanelH = 0.0f;
@@ -159,127 +174,113 @@ void SaturatorUI::render(UIState& state) {
         float knobSpacing = advKnob + 16.0f;
 
         if (mode == 0) {
-            // инструмент: НЧ, СЧ, ВЧ, ТЕМБР
             float startX = pad + 20;
 
             ImGui::SetCursorPos(ImVec2(startX, knobY));
             float low = getParam(state, kInstLowSat);
-            if (widgets::Knob("\xd0\x9d\xd0\xa7", &low, 0.0f, 1.0f, 0.55f, advKnob, true)) {
+            if (widgets::Knob(s.instLow, &low, 0.0f, 1.0f, 0.55f, advKnob, true)) {
                 setParam(state, kInstLowSat, low);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing, knobY));
             float mid = getParam(state, kInstMidSat);
-            if (widgets::Knob("\xd0\xa1\xd0\xa7", &mid, 0.0f, 1.0f, 0.7f, advKnob, true)) {
+            if (widgets::Knob(s.instMid, &mid, 0.0f, 1.0f, 0.7f, advKnob, true)) {
                 setParam(state, kInstMidSat, mid);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing * 2, knobY));
             float high = getParam(state, kInstHighSat);
-            if (widgets::Knob("\xd0\x92\xd0\xa7", &high, 0.0f, 1.0f, 0.35f, advKnob, true)) {
+            if (widgets::Knob(s.instHigh, &high, 0.0f, 1.0f, 0.35f, advKnob, true)) {
                 setParam(state, kInstHighSat, high);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing * 3, knobY));
             float character = getParam(state, kInstCharacter);
-            if (widgets::Knob("\xd0\xa2\xd0\x95\xd0\x9c\xd0\x91\xd0\xa0", &character, 0.0f, 1.0f, 0.6f, advKnob, true)) {
+            if (widgets::Knob(s.instChar, &character, 0.0f, 1.0f, 0.6f, advKnob, true)) {
                 setParam(state, kInstCharacter, character);
             }
 
             float descX = startX + knobSpacing * 4 + 10;
             dl->AddText(ImVec2(descX, advPanelY + 6),
-                        IM_COL32(110, 105, 92, 255),
-                        "LR4 crossover + tube sat");
+                        IM_COL32(110, 105, 92, 255), s.instDesc1);
             dl->AddText(ImVec2(descX, advPanelY + 22),
-                        IM_COL32(80, 76, 68, 255),
-                        "\xd0\x9d\xd0\xa7/\xd0\xa1\xd0\xa7/\xd0\x92\xd0\xa7: \xd1\x81\xd0\xb8\xd0\xbb\xd0\xb0 \xd0\xbf\xd0\xbe \xd0\xbf\xd0\xbe\xd0\xbb\xd0\xbe\xd1\x81\xd0\xb0\xd0\xbc");
+                        IM_COL32(80, 76, 68, 255), s.instDesc2);
             dl->AddText(ImVec2(descX, advPanelY + 38),
-                        IM_COL32(80, 76, 68, 255),
-                        "\xd0\xa2\xd0\x95\xd0\x9c\xd0\x91\xd0\xa0: \xd1\x87\xd0\xb5\xd1\x82/\xd0\xbd\xd0\xb5\xd1\x87\xd0\xb5\xd1\x82 \xd0\xb3\xd0\xb0\xd1\x80\xd0\xbc\xd0\xbe\xd0\xbd\xd0\xb8\xd0\xba\xd0\xb8");
+                        IM_COL32(80, 76, 68, 255), s.instDesc3);
             dl->AddText(ImVec2(descX, advPanelY + 54),
                         IM_COL32(65, 62, 55, 255),
-                        "y = tube(x*d) + T2..T5");
+                        "y = lerp(tanh, tanh+T2, char)");
         } else if (mode == 1) {
-            // ударные: ЧУВСТ, УДАР, СУСТЕЙН
             float startX = pad + 20;
 
             ImGui::SetCursorPos(ImVec2(startX, knobY));
             float sens = getParam(state, kDrumTransientSens);
-            if (widgets::Knob("\xd0\xa7\xd0\xa3\xd0\x92\xd0\xa1\xd0\xa2", &sens, 0.0f, 1.0f, 0.6f, advKnob, true)) {
+            if (widgets::Knob(s.drumSens, &sens, 0.0f, 1.0f, 0.6f, advKnob, true)) {
                 setParam(state, kDrumTransientSens, sens);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing, knobY));
             float punch = getParam(state, kDrumPunch);
-            if (widgets::Knob("\xd0\xa3\xd0\x94\xd0\x90\xd0\xa0", &punch, 0.0f, 1.0f, 0.6f, advKnob, true)) {
+            if (widgets::Knob(s.drumPunch, &punch, 0.0f, 1.0f, 0.6f, advKnob, true)) {
                 setParam(state, kDrumPunch, punch);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing * 2, knobY));
             float sustain = getParam(state, kDrumSustainSat);
-            if (widgets::Knob("\xd0\xa1\xd0\xa3\xd0\xa1\xd0\xa2", &sustain, 0.0f, 1.0f, 0.5f, advKnob, true)) {
+            if (widgets::Knob(s.drumSustain, &sustain, 0.0f, 1.0f, 0.5f, advKnob, true)) {
                 setParam(state, kDrumSustainSat, sustain);
             }
 
             float descX = startX + knobSpacing * 3 + 10;
             dl->AddText(ImVec2(descX, advPanelY + 6),
-                        IM_COL32(110, 105, 92, 255),
-                        "transient + sustain split");
+                        IM_COL32(110, 105, 92, 255), s.drumDesc1);
             dl->AddText(ImVec2(descX, advPanelY + 22),
-                        IM_COL32(80, 76, 68, 255),
-                        "\xd0\xa7\xd0\xa3\xd0\x92\xd0\xa1\xd0\xa2: \xd0\xbf\xd0\xbe\xd1\x80\xd0\xbe\xd0\xb3 \xd1\x82\xd1\x80\xd0\xb0\xd0\xbd\xd0\xb7.");
+                        IM_COL32(80, 76, 68, 255), s.drumDesc2);
             dl->AddText(ImVec2(descX, advPanelY + 38),
-                        IM_COL32(80, 76, 68, 255),
-                        "\xd0\xa3\xd0\x94\xd0\x90\xd0\xa0: \xd0\xb0\xd0\xba\xd1\x86\xd0\xb5\xd0\xbd\xd1\x82, "
-                        "\xd0\xa1\xd0\xa3\xd0\xa1\xd0\xa2: \xd1\x82\xd0\xb5\xd0\xbb\xd0\xbe");
+                        IM_COL32(80, 76, 68, 255), s.drumDesc3);
             dl->AddText(ImVec2(descX, advPanelY + 54),
                         IM_COL32(65, 62, 55, 255),
-                        "y = lerp(sat, clean, gate)");
+                        "y = lerp(sat, dry*boost, punch*gate\xc2\xb2)");
         }
         else {
-            // вокал/лента: СМЕЩ, ВАУ, ДЕТОН, СРЕЗ
             float startX = pad + 20;
 
             ImGui::SetCursorPos(ImVec2(startX, knobY));
             float bias = getParam(state, kTapeBias);
-            if (widgets::Knob("\xd0\xa1\xd0\x9c\xd0\x95\xd0\xa9", &bias, 0.0f, 1.0f, 0.3f, advKnob, true)) {
+            if (widgets::Knob(s.vocalBias, &bias, 0.0f, 1.0f, 0.3f, advKnob, true)) {
                 setParam(state, kTapeBias, bias);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing, knobY));
             float wow = getParam(state, kTapeWow);
-            if (widgets::Knob("\xd0\x92\xd0\x90\xd0\xa3", &wow, 0.0f, 1.0f, 0.15f, advKnob, true)) {
+            if (widgets::Knob(s.vocalWow, &wow, 0.0f, 1.0f, 0.15f, advKnob, true)) {
                 setParam(state, kTapeWow, wow);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing * 2, knobY));
             float flutter = getParam(state, kTapeFlutter);
-            if (widgets::Knob("\xd0\x94\xd0\x95\xd0\xa2\xd0\x9e\xd0\x9d", &flutter, 0.0f, 1.0f, 0.1f, advKnob, true)) {
+            if (widgets::Knob(s.vocalFlutter, &flutter, 0.0f, 1.0f, 0.1f, advKnob, true)) {
                 setParam(state, kTapeFlutter, flutter);
             }
 
             ImGui::SetCursorPos(ImVec2(startX + knobSpacing * 3, knobY));
             float cutoff = getParam(state, kTapeHeadCutoff);
-            if (widgets::Knob("\xd0\xa1\xd0\xa0\xd0\x95\xd0\x97", &cutoff, 0.0f, 1.0f, 0.75f, advKnob, true)) {
+            if (widgets::Knob(s.vocalCutoff, &cutoff, 0.0f, 1.0f, 0.75f, advKnob, true)) {
                 setParam(state, kTapeHeadCutoff, cutoff);
             }
 
             float descX = startX + knobSpacing * 4 + 10;
             dl->AddText(ImVec2(descX, advPanelY + 6),
-                        IM_COL32(110, 105, 92, 255),
-                        "tape hysteresis + LFO");
+                        IM_COL32(110, 105, 92, 255), s.vocalDesc1);
             dl->AddText(ImVec2(descX, advPanelY + 22),
-                        IM_COL32(80, 76, 68, 255),
-                        "\xd0\xa1\xd0\x9c\xd0\x95\xd0\xa9: \xd1\x82\xd0\xbe\xd1\x87\xd0\xba\xd0\xb0 \xd0\xbb\xd0\xb5\xd0\xbd\xd1\x82\xd1\x8b");
+                        IM_COL32(80, 76, 68, 255), s.vocalDesc2);
             dl->AddText(ImVec2(descX, advPanelY + 38),
-                        IM_COL32(80, 76, 68, 255),
-                        "\xd0\x92\xd0\x90\xd0\xa3/\xd0\x94\xd0\x95\xd0\xa2: \xd0\xbc\xd0\xbe\xd0\xb4. \xd1\x81\xd0\xba\xd0\xbe\xd1\x80\xd0\xbe\xd1\x81\xd1\x82\xd0\xb8");
+                        IM_COL32(80, 76, 68, 255), s.vocalDesc3);
             dl->AddText(ImVec2(descX, advPanelY + 54),
-                        IM_COL32(80, 76, 68, 255),
-                        "\xd0\xa1\xd0\xa0\xd0\x95\xd0\x97: \xd1\x84\xd0\xb8\xd0\xbb\xd1\x8c\xd1\x82\xd1\x80 \xd0\xb3\xd0\xbe\xd0\xbb\xd0\xbe\xd0\xb2\xd0\xba\xd0\xb8");
+                        IM_COL32(80, 76, 68, 255), s.vocalDesc4);
             dl->AddText(ImVec2(descX, advPanelY + 70),
                         IM_COL32(65, 62, 55, 255),
-                        "y = hyst(x, bias, fb)");
+                        "y = tanh(d*(x + fb*state))");
         }
 
         // селектор оверсемплинга — глобальный (—/2x/4x)
@@ -288,7 +289,7 @@ void SaturatorUI::render(UIState& state) {
             float osY = advPanelY + advPanelH - 34;
 
             dl->AddText(ImVec2(osX - 22, osY + 7),
-                        IM_COL32(80, 76, 68, 255), "\xd0\x9e\xd0\xa1");
+                        IM_COL32(80, 76, 68, 255), s.osLabel);
 
             float osNorm = getParam(state, kOversampling);
             int osMode = static_cast<int>(osNorm * 2.0f + 0.5f);
@@ -330,24 +331,23 @@ void SaturatorUI::render(UIState& state) {
         }
     }
 
-    // СИГНАЛ
-    float wfY = advPanelY + (state.advancedOpen ? advPanelH + 8 : 0);
-    float wfH = ws.y - wfY - pad;
-    if (wfH < 40) wfH = 40;
-    float wfW = ws.x - pad * 2;
+    // СПЕКТР
+    float specY = advPanelY + (state.advancedOpen ? advPanelH + 8 : 0);
+    float specH = ws.y - specY - pad;
+    if (specH < 40) specH = 40;
+    float specW = ws.x - pad * 2;
 
-    ImGui::SetCursorPos(ImVec2(pad, wfY));
+    ImGui::SetCursorPos(ImVec2(pad, specY));
     if (state.metering) {
-        widgets::WaveformOverlay("\xd0\xa1\xd0\x98\xd0\x93\xd0\x9d\xd0\x90\xd0\x9b",
-            state.metering->inputWaveform.samples.data(),
+        float sr = state.metering->sampleRate.load(std::memory_order_relaxed);
+        widgets::SpectrumDisplay(s.spectrum,
             state.metering->outputWaveform.samples.data(),
             dsp::MeteringData::kWaveformSize,
-            state.metering->inputWaveform.writePos.load(std::memory_order_relaxed),
             state.metering->outputWaveform.writePos.load(std::memory_order_relaxed),
-            ImVec2(wfW, wfH));
+            ImVec2(specW, specH), sr);
     } else {
-        widgets::WaveformOverlay("\xd0\xa1\xd0\x98\xd0\x93\xd0\x9d\xd0\x90\xd0\x9b",
-            nullptr, nullptr, 0, 0, 0, ImVec2(wfW, wfH));
+        widgets::SpectrumDisplay(s.spectrum,
+            nullptr, 0, 0, ImVec2(specW, specH));
     }
 
     ImGui::End();

@@ -29,7 +29,7 @@ void LevelMeter(const char* label, float level, float width = 8.0f, float height
 // спектроанализатор
 void SpectrumDisplay(const char* label,
                      const float* samples, int numSamples, int writePos,
-                     ImVec2 size);
+                     ImVec2 size, float sampleRate = 44100.0f);
 
 // фон панели
 void DrawBackground(ImVec2 pos, ImVec2 size);

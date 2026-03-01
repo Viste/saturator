@@ -91,6 +91,8 @@ smtg_add_vst3plugin(Saturator
     source/gui/Widgets.hpp
     source/gui/Widgets.cpp
     source/gui/UIState.hpp
+    source/gui/Locale.hpp
+    source/gui/Locale.cpp
 )
 
 # Platform-specific GUI sources

@@ -47,6 +47,7 @@ tresult PLUGIN_API BaseProcessor::setActive(TBool state) {
         drumMode_->prepare(sr, maxBlock);
         vocalMode_->prepare(sr, maxBlock);
 
+        metering_.sampleRate.store(static_cast<float>(sr), std::memory_order_relaxed);
         sendMeteringPointer();
     } else {
         instrumentMode_->reset();
