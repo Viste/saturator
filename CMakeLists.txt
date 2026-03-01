@@ -106,12 +106,12 @@ endif()
 # --- Dependencies ---
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/extra/infra")
 add_subdirectory(extra/infra)
-target_include_directories(Saturator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/extra/infra/include)
+target_include_directories(Saturator SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/extra/infra/include)
 target_link_libraries(Saturator PRIVATE infra)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/extra/q_lib")
 add_subdirectory(extra/q_lib)
-target_include_directories(Saturator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/extra/q_lib/include)
+target_include_directories(Saturator SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/extra/q_lib/include)
 target_link_libraries(Saturator PRIVATE libq)
 
 target_link_libraries(Saturator PRIVATE sdk imgui)
