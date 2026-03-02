@@ -36,6 +36,20 @@ inline float tapeSaturate(float x, float drive) {
     return std::atan(d * x) / atanD;
 }
 
+// мягкий клиппер: tanh-колено после порога
+inline float softClip(float x, float amount) {
+    if (amount < 0.001f) return x;
+    // пологая кривая: порог опускается медленно, колено мягкое
+    float threshold = 1.0f - amount * 0.35f;   // 1.0 → 0.65
+    float absX = std::abs(x);
+    if (absX <= threshold) return x;
+    float knee = 0.5f + amount * 1.5f;         // 0.5 → 2.0
+    float excess = absX - threshold;
+    float headroom = 1.0f - threshold;
+    float compressed = threshold + headroom * std::tanh(knee * excess / headroom);
+    return (x >= 0.0f) ? compressed : -compressed;
+}
+
 // обогащение гармониками через полиномы чебышёва
 inline float harmonicEnrich(float x, float amount, int maxOrder = 5) {
     if (amount < 0.001f || maxOrder < 2) return x;
