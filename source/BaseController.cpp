@@ -86,6 +86,15 @@ tresult PLUGIN_API BaseController::initialize(FUnknown* context) {
     parameters.addParameter(STR16("Tape Speed"), STR16("%"), 0, 0.5,
                             ParameterInfo::kCanAutomate, kTapeSpeed);
 
+    // клиппер
+    auto* clipEnParam = new StringListParameter(STR16("Clip Enabled"), kClipEnabled);
+    clipEnParam->appendString(STR16("Off"));
+    clipEnParam->appendString(STR16("On"));
+    parameters.addParameter(clipEnParam);
+
+    parameters.addParameter(STR16("Clip Amount"), STR16("%"), 0, 0.0,
+                            ParameterInfo::kCanAutomate, kClipAmount);
+
     return kResultOk;
 }
 
@@ -155,6 +164,13 @@ tresult PLUGIN_API BaseController::setComponentState(IBStream* state) {
         if (streamer.readFloat(val)) setParamNormalized(kTapeHissLevel, val);
         if (streamer.readFloat(val)) setParamNormalized(kTapeHeadCutoff, val);
         if (streamer.readFloat(val)) setParamNormalized(kTapeSpeed, val);
+    }
+
+    if (version >= 3) {
+        bool ce = false;
+        if (streamer.readBool(ce)) setParamNormalized(kClipEnabled, ce ? 1.0 : 0.0);
+        float val;
+        if (streamer.readFloat(val)) setParamNormalized(kClipAmount, val);
     }
 
     return kResultOk;

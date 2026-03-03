@@ -151,8 +151,15 @@ void ImGuiPlugView::platformShutdown() {
     auto* data = static_cast<Win32PlatformData*>(platformData_);
     if (!data) return;
 
+    // отключаем WndProc от данных ДО любого уничтожения —
+    // DestroyWindow прокачивает оставшиеся WM_PAINT/WM_TIMER,
+    // если WndProc увидит валидный data, будет use-after-free
+    data->plugView = nullptr;
+    SetWindowLongPtr(data->hwnd, GWLP_USERDATA, 0);
+
     if (data->timerId) {
         KillTimer(data->hwnd, data->timerId);
+        data->timerId = 0;
     }
 
     wglMakeCurrent(data->hdc, data->hglrc);
@@ -160,6 +167,7 @@ void ImGuiPlugView::platformShutdown() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext(data->imguiContext);
+    data->imguiContext = nullptr;
 
     wglMakeCurrent(nullptr, nullptr);
     wglDeleteContext(data->hglrc);
@@ -198,6 +206,13 @@ void ImGuiPlugView::platformEndFrame() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     SwapBuffers(data->hdc);
+}
+
+void ImGuiPlugView::platformResize(int width, int height) {
+    auto* data = static_cast<Win32PlatformData*>(platformData_);
+    if (!data || !data->hwnd) return;
+    SetWindowPos(data->hwnd, nullptr, 0, 0, width, height,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 } // namespace gui

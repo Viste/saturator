@@ -1,45 +1,35 @@
 #import <Cocoa/Cocoa.h>
-#import <OpenGL/gl3.h>
-#import <OpenGL/OpenGL.h>
+#import <Metal/Metal.h>
+#import <MetalKit/MetalKit.h>
 
 #include "ImGuiPlugView.hpp"
 #include <imgui.h>
-#include <imgui_impl_opengl3.h>
+#include <imgui_impl_metal.h>
 #include <imgui_impl_osx.h>
 
-@interface SaturatorOpenGLView : NSOpenGLView {
+@interface SaturatorMetalView : MTKView <MTKViewDelegate> {
     gui::ImGuiPlugView* _plugView;
-    NSTimer* _renderTimer;
     ImGuiContext* _imguiContext;
+    id<MTLCommandQueue> _commandQueue;
     BOOL _imguiInitialized;
 }
 - (instancetype)initWithFrame:(NSRect)frame plugView:(gui::ImGuiPlugView*)plugView;
-- (void)startRendering;
-- (void)stopRendering;
 - (void)shutdownImGui;
 @end
 
-@implementation SaturatorOpenGLView
+@implementation SaturatorMetalView
 
 - (instancetype)initWithFrame:(NSRect)frame plugView:(gui::ImGuiPlugView*)plugView {
-    NSOpenGLPixelFormatAttribute attrs[] = {
-        NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion3_2Core,
-        NSOpenGLPFAColorSize, 24,
-        NSOpenGLPFAAlphaSize, 8,
-        NSOpenGLPFADepthSize, 24,
-        NSOpenGLPFADoubleBuffer,
-        NSOpenGLPFAAccelerated,
-        0
-    };
-
-    NSOpenGLPixelFormat* pixelFormat = [[NSOpenGLPixelFormat alloc] initWithAttributes:attrs];
-    self = [super initWithFrame:frame pixelFormat:pixelFormat];
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    self = [super initWithFrame:frame device:device];
     if (self) {
         _plugView = plugView;
-        _renderTimer = nil;
         _imguiInitialized = NO;
+        _commandQueue = [device newCommandQueue];
 
-        [[self openGLContext] makeCurrentContext];
+        self.delegate = self;
+        self.clearColor = MTLClearColorMake(0.12, 0.12, 0.14, 1.0);
+        self.preferredFramesPerSecond = 60;
 
         IMGUI_CHECKVERSION();
         _imguiContext = ImGui::CreateContext();
@@ -69,59 +59,66 @@
             io.Fonts->AddFontDefault();
         }
 
+        ImGui_ImplMetal_Init(device);
         ImGui_ImplOSX_Init(self);
-        ImGui_ImplOpenGL3_Init("#version 150");
         _imguiInitialized = YES;
     }
     return self;
 }
 
-// top-left origin для imgui
 - (BOOL)isFlipped { return YES; }
 
-- (void)startRendering {
-    if (!_renderTimer) {
-        _renderTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0
-                                                       target:self
-                                                     selector:@selector(renderTick:)
-                                                     userInfo:nil
-                                                      repeats:YES];
-        [[NSRunLoop currentRunLoop] addTimer:_renderTimer forMode:NSRunLoopCommonModes];
-    }
+#pragma mark - MTKViewDelegate
+
+- (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
+    // MTKView обрабатывает ресайз автоматически
 }
 
-- (void)stopRendering {
-    [_renderTimer invalidate];
-    _renderTimer = nil;
-}
+- (void)drawInMTKView:(MTKView*)view {
+    if (!_imguiInitialized || !_plugView)
+        return;
 
-- (void)renderTick:(NSTimer*)timer {
-    [self setNeedsDisplay:YES];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    [[self openGLContext] makeCurrentContext];
     ImGui::SetCurrentContext(_imguiContext);
 
+    MTLRenderPassDescriptor* rpd = view.currentRenderPassDescriptor;
+    if (rpd == nil)
+        return;
+
+    id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+
+    // begin ImGui frame
+    ImGui_ImplMetal_NewFrame(rpd);
+    ImGui_ImplOSX_NewFrame(view);
+    ImGui::NewFrame();
+
+    // отрисовка UI плагина
     _plugView->renderFrame();
+
+    // end ImGui frame
+    ImGui::Render();
+    id<MTLRenderCommandEncoder> encoder =
+        [commandBuffer renderCommandEncoderWithDescriptor:rpd];
+    ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, encoder);
+    [encoder endEncoding];
+
+    [commandBuffer presentDrawable:view.currentDrawable];
+    [commandBuffer commit];
 }
 
-// синхронный shutdown imgui до удаления view
-// убирает nsevent monitor до деинициализации
+#pragma mark - Shutdown
+
 - (void)shutdownImGui {
     if (!_imguiInitialized) return;
     _imguiInitialized = NO;
 
-    [[self openGLContext] makeCurrentContext];
     ImGui::SetCurrentContext(_imguiContext);
-    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplMetal_Shutdown();
     ImGui_ImplOSX_Shutdown();
     ImGui::DestroyContext(_imguiContext);
     _imguiContext = nullptr;
 }
 
 - (void)dealloc {
-    [self stopRendering];
     [self shutdownImGui];
     [super dealloc];
 }
@@ -143,7 +140,7 @@
     [self addTrackingArea:ta];
 }
 
-// события мыши/клавиатуры → перерисовка (imgui ловит через nsevent monitor)
+// события мыши/клавиатуры → перерисовка
 - (void)mouseDown:(NSEvent*)event       { [self setNeedsDisplay:YES]; }
 - (void)mouseUp:(NSEvent*)event         { [self setNeedsDisplay:YES]; }
 - (void)mouseMoved:(NSEvent*)event      { [self setNeedsDisplay:YES]; }
@@ -162,54 +159,41 @@ namespace gui {
 bool ImGuiPlugView::platformInit(void* parentWindow) {
     NSView* parentView = (NSView*)parentWindow;
 
-    // используем bounds родителя — daw мог закешировать другой размер
     NSRect frame = [parentView bounds];
     if (frame.size.width < 1 || frame.size.height < 1) {
         frame = NSMakeRect(0, 0, kDefaultWidth, kDefaultHeight);
     }
 
-    SaturatorOpenGLView* glView = [[SaturatorOpenGLView alloc] initWithFrame:frame plugView:this];
-    [glView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-    [parentView addSubview:glView];
-    [glView startRendering];
+    SaturatorMetalView* metalView = [[SaturatorMetalView alloc] initWithFrame:frame plugView:this];
+    [metalView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    [parentView addSubview:metalView];
 
-    [glView retain];
-    platformData_ = (void*)glView;
+    [metalView retain];
+    platformData_ = (void*)metalView;
     return true;
 }
 
 void ImGuiPlugView::platformShutdown() {
     if (platformData_) {
-        SaturatorOpenGLView* glView = (SaturatorOpenGLView*)platformData_;
-        [glView stopRendering];
-        // синхронный shutdown imgui до release
-        [glView shutdownImGui];
-        [glView removeFromSuperview];
-        [glView release];
+        SaturatorMetalView* metalView = (SaturatorMetalView*)platformData_;
+        metalView.paused = YES;
+        [metalView shutdownImGui];
+        [metalView removeFromSuperview];
+        [metalView release];
         platformData_ = nullptr;
     }
 }
 
 void ImGuiPlugView::platformBeginFrame() {
-    SaturatorOpenGLView* glView = (SaturatorOpenGLView*)platformData_;
-    NSRect bounds = [glView bounds];
-    NSRect backing = [glView convertRectToBacking:bounds];
-
-    glViewport(0, 0, (int)backing.size.width, (int)backing.size.height);
-    glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplOSX_NewFrame(glView);
-    ImGui::NewFrame();
+    // Metal: begin/end frame обрабатывается в drawInMTKView
 }
 
 void ImGuiPlugView::platformEndFrame() {
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    // Metal: begin/end frame обрабатывается в drawInMTKView
+}
 
-    SaturatorOpenGLView* glView = (SaturatorOpenGLView*)platformData_;
-    [[glView openGLContext] flushBuffer];
+void ImGuiPlugView::platformResize(int /*width*/, int /*height*/) {
+    // MTKView авто-ресайзится через NSViewWidthSizable | NSViewHeightSizable
 }
 
 } // namespace gui

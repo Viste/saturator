@@ -12,7 +12,7 @@ set(SMTG_CREATE_PLUGIN_LINK OFF)
 set(SMTG_ENABLE_VSTGUI_SUPPORT OFF)
 
 project(Saturator
-    VERSION 2.0.1
+    VERSION 2.1.0
     DESCRIPTION "Saturator VST 3 Plug-in"
 )
 
@@ -28,7 +28,7 @@ include(FetchContent)
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG v1.91.8
+    GIT_TAG v1.92.6
 )
 FetchContent_MakeAvailable(imgui)
 
@@ -37,13 +37,18 @@ set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
 
 if(APPLE)
-    list(APPEND IMGUI_SOURCES ${imgui_SOURCE_DIR}/backends/imgui_impl_osx.mm)
+    list(APPEND IMGUI_SOURCES
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_osx.mm
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_metal.mm
+    )
 elseif(WIN32)
-    list(APPEND IMGUI_SOURCES ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp)
+    list(APPEND IMGUI_SOURCES
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+    )
 endif()
 
 add_library(imgui STATIC ${IMGUI_SOURCES})
@@ -54,7 +59,12 @@ target_include_directories(imgui PUBLIC
 target_compile_features(imgui PRIVATE cxx_std_17)
 
 if(APPLE)
-    target_link_libraries(imgui PUBLIC "-framework AppKit")
+    target_link_libraries(imgui PUBLIC "-framework AppKit" "-framework Metal")
+    set_source_files_properties(
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_osx.mm
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_metal.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+    )
 endif()
 
 # --- Plugin Sources ---
@@ -132,12 +142,16 @@ smtg_target_configure_version_file(Saturator)
 if(APPLE)
     find_library(COREFOUNDATION_LIBRARY CoreFoundation)
     find_library(IOKIT_LIBRARY IOKit)
-    find_library(OPENGL_LIBRARY OpenGL)
+    find_library(METAL_LIBRARY Metal)
+    find_library(METALKIT_LIBRARY MetalKit)
+    find_library(QUARTZCORE_LIBRARY QuartzCore)
     find_library(GAMECONTROLLER_LIBRARY GameController)
     target_link_libraries(Saturator PRIVATE
         ${COREFOUNDATION_LIBRARY}
         ${IOKIT_LIBRARY}
-        ${OPENGL_LIBRARY}
+        ${METAL_LIBRARY}
+        ${METALKIT_LIBRARY}
+        ${QUARTZCORE_LIBRARY}
         ${GAMECONTROLLER_LIBRARY}
     )
 

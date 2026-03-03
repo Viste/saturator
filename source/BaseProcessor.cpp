@@ -1,5 +1,6 @@
 #include "BaseProcessor.hpp"
 #include "PluginIds.hpp"
+#include "dsp/Waveshapers.hpp"
 #include "MessagesConsts.hpp"
 #include <base/source/fstreamer.h>
 #include <public.sdk/source/vst/vstaudioprocessoralgo.h>
@@ -134,6 +135,9 @@ void BaseProcessor::readParameterChanges(ProcessData& data) {
             case kTapeHissLevel:  tapeHissLevel_ = v; break;
             case kTapeHeadCutoff: tapeHeadCutoff_ = v; break;
             case kTapeSpeed:      tapeSpeed_ = v; break;
+
+            case kClipEnabled:    clipEnabled_ = (v > 0.5f); break;
+            case kClipAmount:     clipAmount_ = v; break;
         }
     }
 }
@@ -235,6 +239,14 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
             break;
     }
 
+    if (clipEnabled_ && clipAmount_ > 0.001f) {
+        for (int32 ch = 0; ch < numChannels; ++ch) {
+            for (int32 i = 0; i < data.numSamples; ++i) {
+                out[ch][i] = dsp::softClip(out[ch][i], clipAmount_);
+            }
+        }
+    }
+
     for (int i = 0; i < data.numSamples; ++i) {
         float inL = in[0][i];
         float inR = (numChannels > 1) ? in[1][i] : inL;
@@ -314,6 +326,12 @@ tresult PLUGIN_API BaseProcessor::setState(IBStream* state) {
         streamer.readFloat(tapeSpeed_);
     }
 
+    if (version >= 3) {
+        bool ce = false;
+        if (streamer.readBool(ce)) clipEnabled_ = ce;
+        streamer.readFloat(clipAmount_);
+    }
+
     return kResultOk;
 }
 
@@ -323,7 +341,7 @@ tresult PLUGIN_API BaseProcessor::getState(IBStream* state) {
 
     IBStreamer streamer(state, kLittleEndian);
 
-    streamer.writeInt32(2);
+    streamer.writeInt32(3);
     streamer.writeBool(bypass_);
     streamer.writeInt32(algorithmMode_);
     streamer.writeFloat(saturation_);
@@ -350,6 +368,10 @@ tresult PLUGIN_API BaseProcessor::getState(IBStream* state) {
     streamer.writeFloat(tapeHissLevel_);
     streamer.writeFloat(tapeHeadCutoff_);
     streamer.writeFloat(tapeSpeed_);
+
+    // v3: клиппер
+    streamer.writeBool(clipEnabled_);
+    streamer.writeFloat(clipAmount_);
 
     return kResultOk;
 }

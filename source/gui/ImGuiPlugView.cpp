@@ -17,6 +17,7 @@ ImGuiPlugView::~ImGuiPlugView() {
         ctrl->viewRemoved(this);
     }
     if (initialized_) {
+        initialized_ = false;
         platformShutdown();
     }
 }
@@ -45,8 +46,8 @@ Steinberg::tresult PLUGIN_API ImGuiPlugView::attached(void* parent, Steinberg::F
 
 Steinberg::tresult PLUGIN_API ImGuiPlugView::removed() {
     if (initialized_) {
-        platformShutdown();
         initialized_ = false;
+        platformShutdown();
     }
     return CPluginView::removed();
 }
@@ -62,6 +63,9 @@ Steinberg::tresult PLUGIN_API ImGuiPlugView::onSize(Steinberg::ViewRect* newSize
     if (!newSize)
         return Steinberg::kResultFalse;
     rect = *newSize;
+    if (initialized_) {
+        platformResize(newSize->right - newSize->left, newSize->bottom - newSize->top);
+    }
     return Steinberg::kResultTrue;
 }
 
@@ -85,6 +89,7 @@ void ImGuiPlugView::renderFrame() {
         if (plugFrame)
             plugFrame->resizeView(this, &newRect);
     }
+    uiState_.requestedHeight = 0;
 }
 
 } // namespace gui

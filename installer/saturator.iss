@@ -15,6 +15,9 @@ LicenseFile=
 WizardStyle=modern
 DisableWelcomePage=no
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}"
+
 [Files]
 Source: "{#VST3Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

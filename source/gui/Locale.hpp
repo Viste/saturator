@@ -48,6 +48,8 @@ struct Strings {
     // waveform legend
     const char* wfIn;
     const char* wfOut;
+    // clipper
+    const char* clipLabel;
 };
 
 void setLocale(Lang lang);

@@ -36,6 +36,10 @@ enum Params : Steinberg::Vst::ParamID {
     kTapeHissLevel  = 303,
     kTapeHeadCutoff = 304,
     kTapeSpeed      = 305,
+
+    // клиппер (400-499)
+    kClipEnabled    = 400,
+    kClipAmount     = 401,
 };
 
 #define SaturatorVST3Category "Fx"

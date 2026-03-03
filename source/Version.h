@@ -5,10 +5,11 @@
 #include "projectversion.h"
 
 #define MAJOR_VERSION_INT      2
-#define SUB_VERSION_INT        0
+#define SUB_VERSION_INT        1
 #define RELEASE_NUMBER_INT     0
-#define BUILD_NUMBER_INT       1
-#define FULL_VERSION_STR       "2.0.1"
+#undef  BUILD_NUMBER_INT
+#define BUILD_NUMBER_INT       0
+#define FULL_VERSION_STR       "2.1.0"
 #define stringOriginalFilename "Saturator.vst3"
 #define stringFileDescription  "Saturator VST3 Plugin"
 #define stringCompanyName      "Viste"

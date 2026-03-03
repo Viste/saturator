@@ -7,8 +7,8 @@
 
 namespace gui {
 
-static constexpr int kClosedHeight = 390;
-static constexpr int kOpenHeight   = 500;
+static constexpr int kClosedHeight = 500;
+static constexpr int kOpenHeight   = 700;
 
 static float getParam(UIState& state, Steinberg::Vst::ParamID id) {
     if (!state.controller) return 0.0f;
@@ -60,7 +60,7 @@ void SaturatorUI::render(UIState& state) {
         dl->AddText(ImVec2(pp.x + 10, pp.y + 6),
                     IM_COL32(195, 180, 145, 255), s.title);
 
-        const char* brand = "v2.0.1 Viste";
+        const char* brand = "v2.1.0 Viste";
         ImVec2 bs = ImGui::CalcTextSize(brand);
         float brandX = pp.x + plateW - bs.x - 10;
         dl->AddText(ImVec2(brandX, pp.y + 6),
@@ -94,13 +94,27 @@ void SaturatorUI::render(UIState& state) {
         setParam(state, kMode, static_cast<float>(mode) / 2.0f);
     }
 
+    // кнопки ADV и CLIPPER — ширина по тексту
+    float advBtnW = ImGui::CalcTextSize(s.advToggle).x + 20;
+    float clipBtnW = ImGui::CalcTextSize(s.clipLabel).x + 20;
+
     float advX = modeCenterX + modeW + 10;
     ImGui::SetCursorPos(ImVec2(advX, modeY));
     bool prevAdv = state.advancedOpen;
-    widgets::ToggleButton(s.advToggle, &state.advancedOpen, 50.0f, 28.0f);
+    widgets::ToggleButton(s.advToggle, &state.advancedOpen, advBtnW, 28.0f);
 
     if (state.advancedOpen != prevAdv) {
         state.requestedHeight = state.advancedOpen ? kOpenHeight : kClosedHeight;
+    }
+
+    // CLIP toggle (рядом с ADV)
+    float clipToggleX = advX + advBtnW + 6;
+    ImGui::SetCursorPos(ImVec2(clipToggleX, modeY));
+    bool clipOn = (getParam(state, kClipEnabled) > 0.5f);
+    bool prevClip = clipOn;
+    widgets::ToggleButton(s.clipLabel, &clipOn, clipBtnW, 28.0f);
+    if (clipOn != prevClip) {
+        setParam(state, kClipEnabled, clipOn ? 1.0f : 0.0f);
     }
 
     float ctrlY = modeY + 34;
@@ -113,14 +127,26 @@ void SaturatorUI::render(UIState& state) {
         setParam(state, kSaturation, saturation);
     }
 
-    float mixX = driveX + knobSize + 30;
+    float mixX = driveX + knobSize + 20;
     ImGui::SetCursorPos(ImVec2(mixX, ctrlY));
     float dryWet = getParam(state, kDryWet);
     if (widgets::Knob(s.mix, &dryWet, 0.0f, 1.0f, 1.0f, knobSize, true)) {
         setParam(state, kDryWet, dryWet);
     }
 
-    float meterX = mixX + knobSize + 20;
+    // CLIP knob — показываем только когда клипер включён
+    float meterX;
+    if (clipOn) {
+        float clipKnobX = mixX + knobSize + 20;
+        ImGui::SetCursorPos(ImVec2(clipKnobX, ctrlY));
+        float clipAmount = getParam(state, kClipAmount);
+        if (widgets::Knob(s.clipLabel, &clipAmount, 0.0f, 1.0f, 0.0f, knobSize, true)) {
+            setParam(state, kClipAmount, clipAmount);
+        }
+        meterX = clipKnobX + knobSize + 20;
+    } else {
+        meterX = mixX + knobSize + 20;
+    }
     float meterH = knobSize;
     {
         float inLvl = 0.0f, outLvl = 0.0f;
@@ -140,7 +166,7 @@ void SaturatorUI::render(UIState& state) {
     }
 
     // осциллограмма
-    float wfSmallX = meterX + 40;
+    float wfSmallX = meterX + 60;
     float wfSmallW = ws.x - wfSmallX - pad;
     if (wfSmallW < 80) wfSmallW = 80;
     float wfSmallH = knobSize + 20;

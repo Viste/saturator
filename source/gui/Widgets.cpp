@@ -213,6 +213,9 @@ void WaveformOverlay(const char* label,
     dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                 IM_COL32(48, 45, 40, 255), 0, 0, 1.5f);
 
+    // клип — не даём линиям выходить за границы виджета
+    dl->PushClipRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), true);
+
     float centerY = pos.y + size.y * 0.5f;
     float halfH = size.y * 0.5f;
 
@@ -235,6 +238,7 @@ void WaveformOverlay(const char* label,
     }
 
     if (!inputSamples || !outputSamples || numSamples == 0) {
+        dl->PopClipRect();
         ImGui::Dummy(size);
         return;
     }
@@ -320,6 +324,8 @@ void WaveformOverlay(const char* label,
         }
     }
 
+    dl->PopClipRect();
+
     dl->AddText(ImVec2(pos.x + 5, pos.y + 3), kCreamDim, label);
     float lx = pos.x + size.x - 90;
     dl->AddLine(ImVec2(lx, pos.y + 9), ImVec2(lx + 12, pos.y + 9), inCol, 1.0f);
@@ -385,11 +391,15 @@ void SpectrumDisplay(const char* label,
     dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                 IM_COL32(48, 45, 40, 255), 0, 0, 1.5f);
 
+    // клип — содержимое не выходит за границы виджета
+    dl->PushClipRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), true);
+
     float minDb = -66.0f;
     float maxDb = 0.0f;
     float padBottom = 14.0f;
     float padLeft = 28.0f;
-    float drawW = size.x - padLeft - 2;
+    float padRight = 18.0f;
+    float drawW = size.x - padLeft - padRight;
     float drawH = size.y - padBottom - 14.0f;
     float drawLeft = pos.x + padLeft;
     float drawTop = pos.y + 12.0f;
@@ -401,7 +411,7 @@ void SpectrumDisplay(const char* label,
 
     // сетка дБ
     struct DbLabel { float db; const char* text; };
-    DbLabel dbLabels[] = {{0, "0"}, {-12, "-12"}, {-24, "-24"}, {-48, "-48"}};
+    DbLabel dbLabels[] = {{-12, "-12"}, {-24, "-24"}, {-48, "-48"}};
     for (auto& dl_item : dbLabels) {
         float norm = (dl_item.db - minDb) / (maxDb - minDb);
         float y = bottom - norm * drawH;
@@ -429,6 +439,7 @@ void SpectrumDisplay(const char* label,
     }
 
     if (!samples || numSamples == 0) {
+        dl->PopClipRect();
         dl->AddText(ImVec2(pos.x + 5, pos.y + 3), kCreamDim, label);
         ImGui::Dummy(size);
         return;
@@ -551,6 +562,8 @@ void SpectrumDisplay(const char* label,
         }
         prevPt = curPt;
     }
+
+    dl->PopClipRect();
 
     dl->AddText(ImVec2(pos.x + 5, pos.y + 3), kCreamDim, label);
 

@@ -29,13 +29,14 @@ private:
     void platformShutdown();
     void platformBeginFrame();
     void platformEndFrame();
+    void platformResize(int width, int height);
 
     Steinberg::Vst::EditController* controller_ = nullptr;
     UIState uiState_;
 
-    static constexpr int kDefaultWidth = 700;
-    static constexpr int kDefaultHeight = 390;
-    static constexpr int kExpandedHeight = 500;
+    static constexpr int kDefaultWidth = 900;
+    static constexpr int kDefaultHeight = 500;
+    static constexpr int kExpandedHeight = 700;
 
     void* platformData_ = nullptr;
     bool initialized_ = false;

@@ -72,6 +72,10 @@ private:
     float tapeHeadCutoff_ = 0.5f;
     float tapeSpeed_ = 0.5f;
 
+    // клиппер
+    bool clipEnabled_ = false;
+    float clipAmount_ = 0.0f;
+
     static constexpr int INSTRUMENT_MODE = 0;
     static constexpr int DRUM_MODE = 1;
     static constexpr int VOCAL_MODE = 2;
