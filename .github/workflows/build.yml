@@ -89,17 +89,60 @@ jobs:
     - name: Build
       run: cmake --build build --config Release --parallel
 
-    - name: Package VST3
+    - name: Package VST3 (zip)
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         echo "Found: $VST3_PATH"
         ditto -c -k --sequesterRsrc "$VST3_PATH" Saturator-macOS-arm64.zip
 
-    - name: Upload artifact
+    - name: Build DMG installer
+      run: |
+        VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
+        VERSION=${GITHUB_REF_NAME#v}
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.1.0"; fi
+
+        # создаём структуру для DMG
+        DMG_DIR=$(mktemp -d)
+        VST3_DEST="$DMG_DIR/Saturator.vst3"
+        ditto "$VST3_PATH" "$VST3_DEST"
+
+        # install script — копирует в ~/Library/Audio/Plug-Ins/VST3
+        cat > "$DMG_DIR/Install Saturator.command" << 'SCRIPT'
+        #!/bin/bash
+        DEST="$HOME/Library/Audio/Plug-Ins/VST3"
+        mkdir -p "$DEST"
+        SRC="$(dirname "$0")/Saturator.vst3"
+        if [ ! -d "$SRC" ]; then
+          echo "Ошибка: Saturator.vst3 не найден рядом со скриптом"
+          exit 1
+        fi
+        rm -rf "$DEST/Saturator.vst3"
+        cp -R "$SRC" "$DEST/"
+        echo ""
+        echo "Saturator установлен в $DEST/Saturator.vst3"
+        echo "Перезапустите DAW для применения."
+        echo ""
+        read -p "Нажмите Enter для выхода..."
+        SCRIPT
+        chmod +x "$DMG_DIR/Install Saturator.command"
+
+        # собираем DMG
+        hdiutil create -volname "Saturator $VERSION" \
+          -srcfolder "$DMG_DIR" \
+          -ov -format UDZO \
+          "Saturator-macOS-arm64-$VERSION.dmg"
+
+    - name: Upload artifact (zip)
       uses: actions/upload-artifact@v4
       with:
         name: Saturator-macOS-arm64
         path: Saturator-macOS-arm64.zip
+
+    - name: Upload artifact (dmg)
+      uses: actions/upload-artifact@v4
+      with:
+        name: Saturator-macOS-arm64-DMG
+        path: Saturator-macOS-arm64-*.dmg
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -120,3 +163,4 @@ jobs:
           Saturator-Windows-x64/Saturator-Windows-x64.zip
           Saturator-Windows-x64-Setup/Saturator-*-Setup.exe
           Saturator-macOS-arm64/Saturator-macOS-arm64.zip
+          Saturator-macOS-arm64-DMG/Saturator-macOS-arm64-*.dmg
