@@ -18,7 +18,6 @@ void InstrumentMode::prepare(double sampleRate, int maxBlockSize) {
 
     size_t sz = static_cast<size_t>(maxBlockSize);
     for (auto& buf : bandBuf_) buf.resize(sz);
-    dryBuf_.resize(sz);
 
     dcBlockL_.emplace(cycfi::q::frequency(10.0), static_cast<float>(sampleRate));
     dcBlockR_.emplace(cycfi::q::frequency(10.0), static_cast<float>(sampleRate));
@@ -31,13 +30,13 @@ void InstrumentMode::process(float** in, float** out, int channels, int numSampl
         auto& splitter = splitters_[ch];
         splitter.reconfigure(params_.lowMidFreq, params_.midHighFreq);
 
-        float lowDrive = params_.lowSat * params_.saturation;
-        float midDrive = params_.midSat * params_.saturation;
-        float highDrive = params_.highSat * params_.saturation;
+        float mix = params_.dryWet; // mix управляет интенсивностью, а не crossfade
+        float lowDrive = params_.lowSat * params_.saturation * mix;
+        float midDrive = params_.midSat * params_.saturation * mix;
+        float highDrive = params_.highSat * params_.saturation * mix;
 
         for (int i = 0; i < numSamples; ++i) {
             float dry = in[ch][i] * params_.inputGain;
-            dryBuf_[i] = dry;
 
             auto bands = splitter.split(dry);
             bandBuf_[0][i] = bands.low;
@@ -65,8 +64,7 @@ void InstrumentMode::process(float** in, float** out, int channels, int numSampl
                 wet = (*dcBlockR_)(wet);
             }
 
-            float mixed = std::lerp(dryBuf_[i], wet, params_.dryWet);
-            out[ch][i] = std::clamp(mixed * params_.outputGain, -1.0f, 1.0f);
+            out[ch][i] = std::clamp(wet * params_.outputGain, -1.0f, 1.0f);
         }
     }
 }

@@ -28,14 +28,19 @@ void VocalMode::prepare(double sampleRate, int maxBlockSize) {
 void VocalMode::process(float** in, float** out, int channels, int numSamples) {
     int chCount = std::min(channels, 2);
 
-    float wowFreq = 1.5f;
-    float flutterFreq = 7.0f;
-    float wowDepth = params_.wowAmount * 0.003f;
-    float flutterDepth = params_.flutterAmount * 0.0005f;
+    float mix = params_.dryWet; // mix управляет интенсивностью обработки
+
+    // tapeSpeed 0..1: 0=медленная лента (больше wow, меньше ВЧ), 1=быстрая
+    float speedFactor = 0.5f + params_.tapeSpeed * 1.0f; // 0.5..1.5
+
+    float wowFreq = 1.5f * speedFactor;
+    float flutterFreq = 7.0f * speedFactor;
+    float wowDepth = params_.wowAmount * 0.015f * mix / speedFactor;
+    float flutterDepth = params_.flutterAmount * 0.004f * mix / speedFactor;
     float baseDelay = 8.0f;
 
-    float satDrive = params_.saturation;
-    float feedback = 0.1f + params_.tapeBias * 0.2f;
+    float satDrive = params_.saturation * mix;
+    float feedback = (0.1f + params_.tapeBias * 0.4f) * mix; // расширен диапазон bias
 
     for (int ch = 0; ch < chCount; ++ch) {
         auto& state = channels_[ch];
@@ -46,7 +51,9 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
         state.oversampler.setFactor(params_.osFactor);
 
         if (state.headRolloff) {
-            state.headRolloff->config(cycfi::q::frequency(params_.headCutoff),
+            // быстрая лента = выше срез головки, медленная = ниже
+            float effectiveCutoff = params_.headCutoff * speedFactor;
+            state.headRolloff->config(cycfi::q::frequency(effectiveCutoff),
                                        static_cast<float>(sampleRate_));
         }
 
@@ -97,7 +104,7 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
             }
 
             if (params_.hissLevel > 0.001f) {
-                filtered += generateNoise() * params_.hissLevel * 0.003f;
+                filtered += generateNoise() * params_.hissLevel * 0.05f * mix;
             }
 
             float wet = filtered;
@@ -105,8 +112,7 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
                 wet = (*state.dcBlock)(filtered);
             }
 
-            float mixed = std::lerp(dryBuf_[i], wet, params_.dryWet);
-            out[ch][i] = std::clamp(mixed * params_.outputGain, -1.0f, 1.0f);
+            out[ch][i] = std::clamp(wet * params_.outputGain, -1.0f, 1.0f);
         }
     }
 }

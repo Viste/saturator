@@ -32,7 +32,12 @@ public:
         reset();
     }
 
-    void setFactor(Factor f) { factor_ = f; }
+    void setFactor(Factor f) {
+        if (f != factor_) {
+            factor_ = f;
+            reset(); // очистка FIR delay lines при смене фактора
+        }
+    }
     Factor getFactor() const { return factor_; }
 
     template<typename Fn>

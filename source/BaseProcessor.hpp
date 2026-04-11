@@ -8,6 +8,23 @@
 #include <memory>
 #include <cmath>
 
+// one-pole parameter smoother (~5ms)
+struct ParamSmoother {
+    float current = 0.0f;
+    float sampleCoeff = 0.999f; // per-sample коэффициент
+
+    void prepare(double sampleRate, float timeMs = 5.0f) {
+        sampleCoeff = std::exp(-1.0f / (static_cast<float>(sampleRate) * timeMs * 0.001f));
+    }
+    // вызывается раз в блок — корректно скейлится по размеру блока
+    float smooth(float target, int blockSize) {
+        float blockCoeff = std::pow(sampleCoeff, static_cast<float>(blockSize));
+        current = current * blockCoeff + target * (1.0f - blockCoeff);
+        return current;
+    }
+    void reset(float v) { current = v; }
+};
+
 class BaseProcessor : public Steinberg::Vst::AudioEffect {
 public:
     BaseProcessor();
@@ -32,7 +49,7 @@ public:
 
 private:
     void readParameterChanges(Steinberg::Vst::ProcessData& data);
-    void updateModeParams();
+    void updateModeParams(int blockSize);
     void sendMeteringPointer();
 
     std::unique_ptr<dsp::InstrumentMode> instrumentMode_;
@@ -75,6 +92,22 @@ private:
     // клиппер
     bool clipEnabled_ = false;
     float clipAmount_ = 0.0f;
+
+    // сглаживание параметров (anti-zipper)
+    ParamSmoother smoothSaturation_;
+    ParamSmoother smoothDryWet_;
+    ParamSmoother smoothClipAmount_;
+
+    // bypass fade (anti-click)
+    float bypassGain_ = 0.0f;      // 0=bypassed, 1=active
+    float bypassGainStep_ = 0.0f;  // шаг fade per sample
+
+    // mode/OS switch crossfade (anti-click)
+    int prevMode_ = 0;             // предыдущий режим
+    int prevOsMode_ = 0;           // предыдущий oversampling
+    int modeFadeSamples_ = 0;      // оставшиеся семплы fade
+    int modeFadeTotal_ = 0;        // всего семплов fade (~5ms)
+    std::vector<float> modeFadeBuf_[2]; // буфер старого выхода (L/R)
 
     static constexpr int INSTRUMENT_MODE = 0;
     static constexpr int DRUM_MODE = 1;

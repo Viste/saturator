@@ -85,6 +85,8 @@ public:
     }
 
     float process(float x) {
+        if (drive_ < 0.001f && feedback_ < 0.001f) return x;
+
         float input = x + feedback_ * state_;
         input = std::clamp(input, -2.0f, 2.0f);
 

@@ -47,7 +47,6 @@ private:
     std::array<std::array<Oversampler, 3>, 2> oversamplers_;
 
     std::vector<float> bandBuf_[3];
-    std::vector<float> dryBuf_;
 
     std::optional<cycfi::q::dc_block> dcBlockL_;
     std::optional<cycfi::q::dc_block> dcBlockR_;

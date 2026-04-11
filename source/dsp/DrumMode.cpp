@@ -37,7 +37,18 @@ void DrumMode::prepare(double sampleRate, int maxBlockSize) {
 void DrumMode::process(float** in, float** out, int channels, int numSamples) {
     int chCount = std::min(channels, 2);
     float sensitivity = 1.0f + params_.transientSensitivity * 4.0f;
-    float satDrive = params_.saturation * params_.sustainSat;
+    float mix = params_.dryWet; // mix управляет интенсивностью обработки
+    float satDrive = params_.saturation * params_.sustainSat * mix;
+
+    // пересоздаём fast envelope если attackMs изменился
+    float attackSec = params_.attackMs * 0.001f;
+    if (std::abs(attackSec - lastAttackSec_) > 0.0001f) {
+        lastAttackSec_ = attackSec;
+        float sps = static_cast<float>(sampleRate_);
+        for (auto& ch : channels_) {
+            ch.fastEnv.emplace(cycfi::q::duration(attackSec), sps);
+        }
+    }
 
     for (int ch = 0; ch < chCount; ++ch) {
         auto& state = channels_[ch];
@@ -72,8 +83,8 @@ void DrumMode::process(float** in, float** out, int channels, int numSamples) {
             float saturated = out[ch][i];
             float gate = gateBuf_[i];
 
-            float punchAmount = params_.punch * gate;
-            float punchBoost = 1.0f + params_.punch * 0.3f * gate;
+            float punchAmount = params_.punch * gate * mix;
+            float punchBoost = 1.0f + params_.punch * 0.3f * gate * mix;
             float transientClean = delayed * punchBoost;
 
             // gate=0 (сустейн) → сатурация, gate=1 (транзиент) → чистый+удар
@@ -83,8 +94,7 @@ void DrumMode::process(float** in, float** out, int channels, int numSamples) {
                 wet = (*state.dcBlock)(wet);
             }
 
-            float mixed = std::lerp(delayed, wet, params_.dryWet);
-            out[ch][i] = std::clamp(mixed * params_.outputGain, -1.0f, 1.0f);
+            out[ch][i] = std::clamp(wet * params_.outputGain, -1.0f, 1.0f);
         }
     }
 }
