@@ -12,7 +12,7 @@ set(SMTG_CREATE_PLUGIN_LINK OFF)
 set(SMTG_ENABLE_VSTGUI_SUPPORT OFF)
 
 project(Saturator
-    VERSION 2.1.0
+    VERSION 2.2.0
     DESCRIPTION "Saturator VST 3 Plug-in"
 )
 
@@ -103,16 +103,26 @@ smtg_add_vst3plugin(Saturator
     source/gui/UIState.hpp
     source/gui/Locale.hpp
     source/gui/Locale.cpp
+    source/gui/UpdateChecker.hpp
 )
 
 # Platform-specific GUI sources
 if(APPLE)
-    target_sources(Saturator PRIVATE source/gui/ImGuiPlugView_mac.mm)
+    target_sources(Saturator PRIVATE
+        source/gui/ImGuiPlugView_mac.mm
+        source/gui/UpdateChecker_mac.mm
+    )
     set_source_files_properties(source/gui/ImGuiPlugView_mac.mm PROPERTIES
         COMPILE_FLAGS "-x objective-c++"
     )
+    set_source_files_properties(source/gui/UpdateChecker_mac.mm PROPERTIES
+        COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
+    )
 elseif(WIN32)
-    target_sources(Saturator PRIVATE source/gui/ImGuiPlugView_win.cpp)
+    target_sources(Saturator PRIVATE
+        source/gui/ImGuiPlugView_win.cpp
+        source/gui/UpdateChecker_win.cpp
+    )
 endif()
 
 # --- Dependencies ---
@@ -165,7 +175,7 @@ if(APPLE)
     )
 elseif(SMTG_WIN)
     target_sources(Saturator PRIVATE resource/win32resource.rc)
-    target_link_libraries(Saturator PRIVATE opengl32)
+    target_link_libraries(Saturator PRIVATE opengl32 winhttp)
 
     if(MSVC)
         set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Saturator)

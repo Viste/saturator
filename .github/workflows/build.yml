@@ -29,19 +29,27 @@ jobs:
     - name: Build
       run: cmake --build build --config Release --parallel
 
+    - name: Run DSP tests
+      shell: cmd
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+        cl.exe /std:c++latest /EHsc /O2 /I source /I extra\q_lib\include /I extra\infra\include tests\param_test.cpp source\dsp\InstrumentMode.cpp source\dsp\DrumMode.cpp source\dsp\VocalMode.cpp source\dsp\MultibandSplitter.cpp /Fe:tests\param_test.exe
+        tests\param_test.exe
+
     - name: Package VST3 (zip)
       shell: bash
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
+        VST3_PARENT=$(dirname "$VST3_PATH")
         echo "Found: $VST3_PATH"
-        7z a Saturator-Windows-x64.zip "./$VST3_PATH/*"
+        cd "$VST3_PARENT" && 7z a "$OLDPWD/Saturator-Windows-x64.zip" "Saturator.vst3"
 
     - name: Build Installer (Inno Setup)
       shell: bash
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         VERSION=${GITHUB_REF_NAME#v}
-        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.1.0"; fi
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.2.0"; fi
         iscc //DAppVersion="$VERSION" //DVst3Source="$(cygpath -w "$(pwd)/$VST3_PATH")" \
              //O"." installer/saturator.iss
 
@@ -89,17 +97,30 @@ jobs:
     - name: Build
       run: cmake --build build --config Release --parallel
 
+    - name: Run DSP tests
+      run: |
+        clang++ -std=c++23 -O2 \
+          -I source -I extra/q_lib/include -I extra/infra/include \
+          tests/param_test.cpp \
+          source/dsp/InstrumentMode.cpp \
+          source/dsp/DrumMode.cpp \
+          source/dsp/VocalMode.cpp \
+          source/dsp/MultibandSplitter.cpp \
+          -o tests/param_test
+        ./tests/param_test
+
     - name: Package VST3 (zip)
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
+        VST3_PARENT=$(dirname "$VST3_PATH")
         echo "Found: $VST3_PATH"
-        ditto -c -k --sequesterRsrc "$VST3_PATH" Saturator-macOS-arm64.zip
+        cd "$VST3_PARENT" && ditto -c -k --sequesterRsrc "Saturator.vst3" "$OLDPWD/Saturator-macOS-arm64.zip"
 
     - name: Build DMG installer
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         VERSION=${GITHUB_REF_NAME#v}
-        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.1.0"; fi
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.2.0"; fi
 
         # создаём структуру для DMG
         DMG_DIR=$(mktemp -d)

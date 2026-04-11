@@ -1,7 +1,9 @@
 #include "SaturatorUI.hpp"
 #include "Widgets.hpp"
 #include "Locale.hpp"
+#include "UpdateChecker.hpp"
 #include "../PluginIds.hpp"
+#include "../Version.h"
 #include <imgui.h>
 #include <cstdio>
 
@@ -60,14 +62,47 @@ void SaturatorUI::render(UIState& state) {
         dl->AddText(ImVec2(pp.x + 10, pp.y + 6),
                     IM_COL32(195, 180, 145, 255), s.title);
 
-        const char* brand = "v2.1.0 Viste";
+        const char* brand = "v" FULL_VERSION_STR " Viste";
         ImVec2 bs = ImGui::CalcTextSize(brand);
         float brandX = pp.x + plateW - bs.x - 10;
         dl->AddText(ImVec2(brandX, pp.y + 6),
                     IM_COL32(110, 105, 92, 255), brand);
 
+        // проверка обновлений (один раз)
+        static bool updateCheckStarted = false;
+        if (!updateCheckStarted) {
+            UpdateChecker::checkForUpdate(FULL_VERSION_STR);
+            updateCheckStarted = true;
+        }
+
+        // плашка обновления
+        auto updateInfo = UpdateChecker::getUpdateInfo();
+        if (updateInfo.hasUpdate) {
+            const char* updateIcon = "\xe2\xac\x86"; // ⬆
+            char updateLabel[64];
+            std::snprintf(updateLabel, sizeof(updateLabel), "%s %s",
+                          updateIcon, updateInfo.latestVersion.c_str());
+            ImVec2 updateSize = ImGui::CalcTextSize(updateLabel);
+            float updateX = brandX - updateSize.x - 16;
+            ImVec2 updateMin(updateX - 4, pp.y + 3);
+            ImVec2 updateMax(updateX + updateSize.x + 4, pp.y + 25);
+
+            bool hovered = ImGui::IsMouseHoveringRect(updateMin, updateMax);
+            ImU32 bgCol = hovered ? IM_COL32(210, 130, 50, 200)
+                                  : IM_COL32(210, 130, 50, 140);
+            dl->AddRectFilled(updateMin, updateMax, bgCol, 3.0f);
+            dl->AddText(ImVec2(updateX, pp.y + 6),
+                        IM_COL32(255, 255, 255, 255), updateLabel);
+
+            if (hovered && ImGui::IsMouseClicked(0) && !updateInfo.downloadUrl.empty()) {
+                UpdateChecker::openInBrowser(updateInfo.downloadUrl.c_str());
+            }
+        }
+
         // RU / EN toggle
-        float langX = brandX - 52;
+        float langX = updateInfo.hasUpdate
+            ? brandX - 52 - ImGui::CalcTextSize(updateInfo.latestVersion.c_str()).x - 30
+            : brandX - 52;
         bool isRu = (state.lang == Lang::RU);
         ImU32 ruCol = isRu ? IM_COL32(195, 180, 145, 255) : IM_COL32(80, 76, 68, 255);
         ImU32 enCol = isRu ? IM_COL32(80, 76, 68, 255) : IM_COL32(195, 180, 145, 255);
