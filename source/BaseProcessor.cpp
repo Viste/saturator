@@ -274,14 +274,14 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
             break;
     }
 
+    int32 fadeChannels = std::min(numChannels, 2);
+
     // crossfade: предыдущий блок → новый выход
     if (modeFadeSamples_ > 0) {
         for (int32 i = 0; i < data.numSamples; ++i) {
             if (modeFadeSamples_ > 0) {
                 float t = static_cast<float>(modeFadeSamples_) / static_cast<float>(modeFadeTotal_);
-                for (int32 ch = 0; ch < numChannels; ++ch) {
-                    // modeFadeBuf_ хранит последний семпл предыдущего блока
-                    // crossfade от него к новому выходу
+                for (int32 ch = 0; ch < fadeChannels; ++ch) {
                     out[ch][i] = out[ch][i] * (1.0f - t) + modeFadeBuf_[ch][i] * t;
                 }
                 --modeFadeSamples_;
@@ -290,9 +290,12 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
     }
 
     // сохраняем текущий блок для возможного crossfade в следующем блоке
-    for (int32 ch = 0; ch < numChannels; ++ch) {
-        std::memcpy(modeFadeBuf_[ch].data(), out[ch],
-                    static_cast<size_t>(data.numSamples) * sizeof(float));
+    for (int32 ch = 0; ch < fadeChannels; ++ch) {
+        if (data.numSamples > 0 &&
+            static_cast<size_t>(data.numSamples) <= modeFadeBuf_[ch].size()) {
+            std::memcpy(modeFadeBuf_[ch].data(), out[ch],
+                        static_cast<size_t>(data.numSamples) * sizeof(float));
+        }
     }
 
     float smoothedClip = smoothClipAmount_.smooth(clipAmount_, data.numSamples);

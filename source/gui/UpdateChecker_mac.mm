@@ -12,8 +12,9 @@ std::atomic<bool> UpdateChecker::checked_{false};
 std::string UpdateChecker::httpGet(const char* url) {
     @autoreleasepool {
         NSURL* nsUrl = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
+        if (!nsUrl) return "";
         NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:nsUrl];
-        [request setTimeoutInterval:5.0];
+        [request setTimeoutInterval:2.0];
 
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
         __block NSData* responseData = nil;
@@ -27,7 +28,7 @@ std::string UpdateChecker::httpGet(const char* url) {
                     dispatch_semaphore_signal(sem);
                 }];
         [task resume];
-        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
 
         if (responseError || !responseData || responseData.length == 0)
             return "";
@@ -77,24 +78,30 @@ void UpdateChecker::checkForUpdate(const char* currentVersion) {
     checked_.store(true);
 
     std::string ver(currentVersion);
-    std::thread([ver]() {
-        std::string body = httpGet(kApiUrl);
-        if (body.empty()) return;
+    try {
+        std::thread([ver]() {
+            try {
+                std::string body = httpGet(kApiUrl);
+                if (body.empty()) return;
 
-        std::string latest = jsonValue(body, "version");
-        std::string urlMac = jsonValue(body, "url_mac");
-        std::string changelog = jsonValue(body, "changelog");
+                std::string latest = jsonValue(body, "version");
+                std::string urlMac = jsonValue(body, "url_mac");
+                std::string changelog = jsonValue(body, "changelog");
 
-        if (latest.empty()) return;
+                if (latest.empty()) return;
 
-        bool newer = isNewer(latest.c_str(), ver.c_str());
+                bool newer = isNewer(latest.c_str(), ver.c_str());
 
-        std::lock_guard<std::mutex> lock(mutex_);
-        info_.latestVersion = latest;
-        info_.downloadUrl = urlMac;
-        info_.changelog = changelog;
-        info_.hasUpdate = newer;
-    }).detach();
+                std::lock_guard<std::mutex> lock(mutex_);
+                info_.latestVersion = latest;
+                info_.downloadUrl = urlMac;
+                info_.changelog = changelog;
+                info_.hasUpdate = newer;
+            } catch (...) {
+                // не даём исключению упасть в хост
+            }
+        }).detach();
+    } catch (...) {}
 }
 
 UpdateChecker::UpdateInfo UpdateChecker::getUpdateInfo() {

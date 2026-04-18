@@ -35,8 +35,7 @@ std::string UpdateChecker::httpGet(const char* url) {
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return "";
 
-    // таймаут 5 сек
-    DWORD timeout = 5000;
+    DWORD timeout = 2000;
     WinHttpSetTimeouts(session, timeout, timeout, timeout, timeout);
 
     HINTERNET connect = WinHttpConnect(session, host, uc.nPort, 0);
@@ -110,25 +109,35 @@ void UpdateChecker::checkForUpdate(const char* currentVersion) {
     if (checked_.load()) return;
     checked_.store(true);
 
+    HMODULE thisModule = nullptr;
+    GetModuleHandleExW(
+        GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+        reinterpret_cast<LPCWSTR>(&UpdateChecker::checkForUpdate),
+        &thisModule);
+
     std::string ver(currentVersion);
-    std::thread([ver]() {
-        std::string body = httpGet(kApiUrl);
-        if (body.empty()) return;
+    try {
+        std::thread([ver]() {
+            try {
+                std::string body = httpGet(kApiUrl);
+                if (body.empty()) return;
 
-        std::string latest = jsonValue(body, "version");
-        std::string urlWin = jsonValue(body, "url_win");
-        std::string changelog = jsonValue(body, "changelog");
+                std::string latest = jsonValue(body, "version");
+                std::string urlWin = jsonValue(body, "url_win");
+                std::string changelog = jsonValue(body, "changelog");
 
-        if (latest.empty()) return;
+                if (latest.empty()) return;
 
-        bool newer = isNewer(latest.c_str(), ver.c_str());
+                bool newer = isNewer(latest.c_str(), ver.c_str());
 
-        std::lock_guard<std::mutex> lock(mutex_);
-        info_.latestVersion = latest;
-        info_.downloadUrl = urlWin;
-        info_.changelog = changelog;
-        info_.hasUpdate = newer;
-    }).detach();
+                std::lock_guard<std::mutex> lock(mutex_);
+                info_.latestVersion = latest;
+                info_.downloadUrl = urlWin;
+                info_.changelog = changelog;
+                info_.hasUpdate = newer;
+            } catch (...) {}
+        }).detach();
+    } catch (...) {}
 }
 
 UpdateChecker::UpdateInfo UpdateChecker::getUpdateInfo() {

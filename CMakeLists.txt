@@ -12,7 +12,7 @@ set(SMTG_CREATE_PLUGIN_LINK OFF)
 set(SMTG_ENABLE_VSTGUI_SUPPORT OFF)
 
 project(Saturator
-    VERSION 2.2.0
+    VERSION 2.2.1
     DESCRIPTION "Saturator VST 3 Plug-in"
 )
 
@@ -166,8 +166,27 @@ if(APPLE)
     )
 
     smtg_target_set_bundle(Saturator
-        BUNDLE_IDENTIFIER com.pprfnk.vsraturatorvst3
+        BUNDLE_IDENTIFIER com.vlab.saturatorvst3
         COMPANY_NAME "Viste"
+    )
+    set_target_properties(Saturator PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resource/Info.plist"
+        MACOSX_BUNDLE_BUNDLE_NAME "Saturator"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.vlab.saturatorvst3"
+        MACOSX_BUNDLE_BUNDLE_VERSION "2.2.1"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "2.2.1"
+    )
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/PkgInfo" "BNDL????")
+    add_custom_command(TARGET Saturator POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_BINARY_DIR}/PkgInfo"
+                "$<TARGET_BUNDLE_DIR:Saturator>/Contents/PkgInfo"
+        VERBATIM
+    )
+    add_custom_command(TARGET Saturator POST_BUILD
+        COMMAND codesign --force --sign - --timestamp=none
+                "$<TARGET_BUNDLE_DIR:Saturator>"
+        VERBATIM
     )
     smtg_target_set_debug_executable(Saturator
         "/Applications/VST3PluginTestHost.app"
