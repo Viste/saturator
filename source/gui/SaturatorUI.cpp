@@ -78,10 +78,9 @@ void SaturatorUI::render(UIState& state) {
         // плашка обновления
         auto updateInfo = UpdateChecker::getUpdateInfo();
         if (updateInfo.hasUpdate) {
-            const char* updateIcon = "\xe2\xac\x86"; // ⬆
             char updateLabel[64];
             std::snprintf(updateLabel, sizeof(updateLabel), "%s %s",
-                          updateIcon, updateInfo.latestVersion.c_str());
+                          s.updateAvailable, updateInfo.latestVersion.c_str());
             ImVec2 updateSize = ImGui::CalcTextSize(updateLabel);
             float updateX = brandX - updateSize.x - 16;
             ImVec2 updateMin(updateX - 4, pp.y + 3);

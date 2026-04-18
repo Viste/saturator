@@ -50,6 +50,8 @@ struct Strings {
     const char* wfOut;
     // clipper
     const char* clipLabel;
+    // update banner
+    const char* updateAvailable;
 };
 
 void setLocale(Lang lang);

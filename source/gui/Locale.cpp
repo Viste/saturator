@@ -38,6 +38,7 @@ static const Strings kRU = {
     /* wfIn           */ "\xd0\xb2\xd1\x85",
     /* wfOut          */ "\xd0\xb2\xd1\x8b\xd1\x85",
     /* clipLabel      */ "\xd0\x9a\xd0\x9b\xd0\x98\xd0\x9f\xd0\x95\xd0\xa0",
+    /* updateAvailable*/ "\xd0\x9e\xd0\x91\xd0\x9d",
 };
 
 static const Strings kEN = {
@@ -76,6 +77,7 @@ static const Strings kEN = {
     /* wfIn           */ "in",
     /* wfOut          */ "out",
     /* clipLabel      */ "CLIPPER",
+    /* updateAvailable*/ "NEW",
 };
 
 static const Strings* sCurrent = &kRU;

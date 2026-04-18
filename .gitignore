@@ -34,5 +34,5 @@
 .DS_Store
 build/
 .vscode/
-.chache/
+.cache/
 tests/param_test
