@@ -73,7 +73,32 @@ std::string UpdateChecker::httpGet(const char* url) {
 }
 
 void UpdateChecker::openInBrowser(const char* url) {
-    ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+    if (!url || !*url) return;
+
+    HMODULE thisModule = nullptr;
+    GetModuleHandleExW(
+        GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+        reinterpret_cast<LPCWSTR>(&UpdateChecker::openInBrowser),
+        &thisModule);
+
+    std::string urlCopy(url);
+    try {
+        std::thread([urlCopy]() {
+            try {
+                HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+
+                int wlen = MultiByteToWideChar(CP_UTF8, 0, urlCopy.c_str(), -1, nullptr, 0);
+                if (wlen > 0) {
+                    std::wstring wurl(wlen, L'\0');
+                    MultiByteToWideChar(CP_UTF8, 0, urlCopy.c_str(), -1, wurl.data(), wlen);
+                    ShellExecuteW(nullptr, L"open", wurl.c_str(),
+                                  nullptr, nullptr, SW_SHOWNORMAL);
+                }
+
+                if (SUCCEEDED(hr)) CoUninitialize();
+            } catch (...) {}
+        }).detach();
+    } catch (...) {}
 }
 
 // простой парсер JSON — ищем "key": "value"

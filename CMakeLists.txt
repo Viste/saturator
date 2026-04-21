@@ -12,7 +12,7 @@ set(SMTG_CREATE_PLUGIN_LINK OFF)
 set(SMTG_ENABLE_VSTGUI_SUPPORT OFF)
 
 project(Saturator
-    VERSION 2.2.1
+    VERSION 2.2.2
     DESCRIPTION "Saturator VST 3 Plug-in"
 )
 
@@ -173,8 +173,8 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resource/Info.plist"
         MACOSX_BUNDLE_BUNDLE_NAME "Saturator"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.vlab.saturatorvst3"
-        MACOSX_BUNDLE_BUNDLE_VERSION "2.2.1"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "2.2.1"
+        MACOSX_BUNDLE_BUNDLE_VERSION "2.2.2"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "2.2.2"
     )
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/PkgInfo" "BNDL????")
     add_custom_command(TARGET Saturator POST_BUILD
