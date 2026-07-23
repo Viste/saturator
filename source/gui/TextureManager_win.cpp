@@ -28,12 +28,12 @@ ImTextureID TextureManager::createTexture(const unsigned char* rgba, int width, 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 
-    return reinterpret_cast<ImTextureID>(static_cast<intptr_t>(tex));
+    return static_cast<ImTextureID>(tex);
 }
 
 void TextureManager::destroyTexture(ImTextureID id) {
     if (!id) return;
-    GLuint tex = static_cast<GLuint>(reinterpret_cast<intptr_t>(id));
+    GLuint tex = static_cast<GLuint>(id);
     glDeleteTextures(1, &tex);
 }
 
