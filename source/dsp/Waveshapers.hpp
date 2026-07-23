@@ -5,7 +5,6 @@
 
 namespace dsp {
 
-// мягкая сатурация tanh, нормализация по пику
 inline float softSaturate(float x, float drive) {
     if (drive < 0.001f) return x;
     float d = 1.0f + drive * 4.0f;
@@ -13,7 +12,6 @@ inline float softSaturate(float x, float drive) {
     return std::tanh(d * x) / tanhD;
 }
 
-// ламповая сатурация: tanh + чётная гармоника через T2
 inline float tubeSaturate(float x, float drive) {
     if (drive < 0.001f) return x;
     float d = 1.0f + drive * 4.0f;
@@ -28,7 +26,6 @@ inline float tubeSaturate(float x, float drive) {
     return odd + t2 * evenAmount;
 }
 
-// лента: atan, мягкое колено
 inline float tapeSaturate(float x, float drive) {
     if (drive < 0.001f) return x;
     float d = 1.0f + drive * 5.0f;
@@ -36,10 +33,8 @@ inline float tapeSaturate(float x, float drive) {
     return std::atan(d * x) / atanD;
 }
 
-// мягкий клиппер: tanh-колено после порога
 inline float softClip(float x, float amount) {
     if (amount < 0.001f) return x;
-    // пологая кривая: порог опускается медленно, колено мягкое
     float threshold = 1.0f - amount * 0.35f;   // 1.0 → 0.65
     float absX = std::abs(x);
     if (absX <= threshold) return x;
@@ -50,7 +45,6 @@ inline float softClip(float x, float amount) {
     return (x >= 0.0f) ? compressed : -compressed;
 }
 
-// обогащение гармониками через полиномы чебышёва
 inline float harmonicEnrich(float x, float amount, int maxOrder = 5) {
     if (amount < 0.001f || maxOrder < 2) return x;
 
@@ -73,7 +67,6 @@ inline float harmonicEnrich(float x, float amount, int maxOrder = 5) {
     return x + harmonics * amount;
 }
 
-// эмуляция магнитного гистерезиса ленты
 class TapeHysteresis {
 public:
     void setParams(float drive, float feedback, float sampleRate = 44100.0f) {
@@ -82,6 +75,12 @@ public:
         float fc = 3000.0f;
         float w = 2.0f * 3.14159265f * fc / sampleRate;
         smoothCoeff_ = w / (1.0f + w);
+    }
+
+    // только драйв/фидбек, без пересчёта коэффициентов — для по-сэмпового рампа
+    void setDriveFeedback(float drive, float feedback) {
+        drive_ = drive;
+        feedback_ = std::clamp(feedback, 0.0f, 0.35f);
     }
 
     float process(float x) {

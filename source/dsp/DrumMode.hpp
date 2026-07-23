@@ -13,8 +13,6 @@
 
 namespace dsp {
 
-// сатурация ударных с сохранением транзиентов
-// lookahead буфер для детекции, сатурация только сустейна
 class DrumMode : public SaturationMode {
 public:
     struct Params {
@@ -23,7 +21,7 @@ public:
         float outputGain = 1.0f;
         float dryWet = 1.0f;
         float transientSensitivity = 0.5f;
-        float attackMs = 3.0f;   // время атаки детектора транзиентов (мс)
+        float attackMs = 3.0f;
         float sustainSat = 1.0f;
         float punch = 0.5f;
         Oversampler::Factor osFactor = Oversampler::kNone;
@@ -41,6 +39,10 @@ private:
     double sampleRate_ = 44100.0;
     int lookaheadSamples_ = 0;
     float lastAttackSec_ = 0.003f;
+
+    float rampSat_ = 0.0f;
+    float rampPunch_ = 0.0f;
+    bool rampInit_ = false;
 
     struct ChannelState {
         std::optional<cycfi::q::fast_envelope_follower> fastEnv;

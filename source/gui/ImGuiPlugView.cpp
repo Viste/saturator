@@ -81,7 +81,6 @@ void ImGuiPlugView::renderFrame() {
     SaturatorUI::render(uiState_);
     platformEndFrame();
 
-    // обработка запроса на ресайз от ui
     int reqH = uiState_.requestedHeight;
     if (reqH > 0 && reqH != (rect.bottom - rect.top)) {
         Steinberg::ViewRect newRect(0, 0, rect.right - rect.left, reqH);

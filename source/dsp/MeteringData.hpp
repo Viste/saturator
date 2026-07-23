@@ -7,8 +7,7 @@
 
 namespace dsp {
 
-// lock-free метеринг: процессор пишет, ui читает
-// waveform samples[] не atomic — допустимый data race для аудиометеринга
+// lock-free метеринг; samples[] не atomic — допустимый data race
 struct MeteringData {
     static constexpr int kWaveformSize = 2048;
 
@@ -48,7 +47,6 @@ struct MeteringData {
         outputWaveform.writePos.store((pos + 1) % kWaveformSize, std::memory_order_relaxed);
     }
 
-    // вызывается из ui ~60fps для затухания пиков
     void decayPeaks(float decayFactor = 0.95f) {
         auto decay = [&](std::atomic<float>& peak) {
             float val = peak.load(std::memory_order_relaxed);

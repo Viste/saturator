@@ -8,15 +8,13 @@
 #include <memory>
 #include <cmath>
 
-// one-pole parameter smoother (~5ms)
 struct ParamSmoother {
     float current = 0.0f;
-    float sampleCoeff = 0.999f; // per-sample коэффициент
+    float sampleCoeff = 0.999f;
 
     void prepare(double sampleRate, float timeMs = 5.0f) {
         sampleCoeff = std::exp(-1.0f / (static_cast<float>(sampleRate) * timeMs * 0.001f));
     }
-    // вызывается раз в блок — корректно скейлится по размеру блока
     float smooth(float target, int blockSize) {
         float blockCoeff = std::pow(sampleCoeff, static_cast<float>(blockSize));
         current = current * blockCoeff + target * (1.0f - blockCoeff);
@@ -58,7 +56,6 @@ private:
 
     dsp::MeteringData metering_;
 
-    // глобальные параметры (нормализованные 0..1)
     float saturation_ = 0.0f;
     float inputGainNorm_ = 0.5f;
     float outputGainNorm_ = 0.5f;
@@ -67,7 +64,6 @@ private:
     int algorithmMode_ = 0;
     bool bypass_ = false;
 
-    // инструмент
     float instLowSat_ = 0.5f;
     float instMidSat_ = 0.5f;
     float instHighSat_ = 0.5f;
@@ -75,13 +71,11 @@ private:
     float instMidHighFreq_ = 0.3f;
     float instCharacter_ = 0.5f;
 
-    // ударные
     float drumTransientSens_ = 0.5f;
     float drumAttackMs_ = 0.25f;
     float drumSustainSat_ = 0.5f;
     float drumPunch_ = 0.5f;
 
-    // вокал/лента
     float tapeBias_ = 0.5f;
     float tapeWow_ = 0.3f;
     float tapeFlutter_ = 0.2f;
@@ -89,25 +83,28 @@ private:
     float tapeHeadCutoff_ = 0.5f;
     float tapeSpeed_ = 0.5f;
 
-    // клиппер
     bool clipEnabled_ = false;
     float clipAmount_ = 0.0f;
 
-    // сглаживание параметров (anti-zipper)
     ParamSmoother smoothSaturation_;
     ParamSmoother smoothDryWet_;
     ParamSmoother smoothClipAmount_;
+    ParamSmoother smoothInstLow_;
+    ParamSmoother smoothInstMid_;
+    ParamSmoother smoothInstHigh_;
+    ParamSmoother smoothInstChar_;
+    ParamSmoother smoothDrumSustain_;
+    ParamSmoother smoothDrumPunch_;
+    ParamSmoother smoothTapeBias_;
 
-    // bypass fade (anti-click)
     float bypassGain_ = 0.0f;      // 0=bypassed, 1=active
-    float bypassGainStep_ = 0.0f;  // шаг fade per sample
+    float bypassGainStep_ = 0.0f;
 
-    // mode/OS switch crossfade (anti-click)
-    int prevMode_ = 0;             // предыдущий режим
-    int prevOsMode_ = 0;           // предыдущий oversampling
-    int modeFadeSamples_ = 0;      // оставшиеся семплы fade
-    int modeFadeTotal_ = 0;        // всего семплов fade (~5ms)
-    std::vector<float> modeFadeBuf_[2]; // буфер старого выхода (L/R)
+    // дак-переключение режима/ОС: разрыв DSP-состояния попадает в тишину
+    int activeMode_ = 0;
+    int activeOsMode_ = 0;
+    float switchGain_ = 1.0f;
+    float switchGainStep_ = 0.0f;
 
     static constexpr int INSTRUMENT_MODE = 0;
     static constexpr int DRUM_MODE = 1;

@@ -48,23 +48,30 @@ tresult PLUGIN_API BaseProcessor::setActive(TBool state) {
         drumMode_->prepare(sr, maxBlock);
         vocalMode_->prepare(sr, maxBlock);
 
-        smoothSaturation_.prepare(sr);
-        smoothDryWet_.prepare(sr);
-        smoothClipAmount_.prepare(sr);
+        ParamSmoother* smoothers[] = {
+            &smoothSaturation_, &smoothDryWet_, &smoothClipAmount_,
+            &smoothInstLow_, &smoothInstMid_, &smoothInstHigh_, &smoothInstChar_,
+            &smoothDrumSustain_, &smoothDrumPunch_, &smoothTapeBias_
+        };
+        for (auto* sm : smoothers) sm->prepare(sr, 20.0f);
         smoothSaturation_.reset(saturation_);
         smoothDryWet_.reset(dryWet_);
-        smoothClipAmount_.reset(clipAmount_);
+        smoothClipAmount_.reset(clipEnabled_ ? clipAmount_ : 0.0f);
+        smoothInstLow_.reset(instLowSat_);
+        smoothInstMid_.reset(instMidSat_);
+        smoothInstHigh_.reset(instHighSat_);
+        smoothInstChar_.reset(instCharacter_);
+        smoothDrumSustain_.reset(drumSustainSat_);
+        smoothDrumPunch_.reset(drumPunch_);
+        smoothTapeBias_.reset(tapeBias_);
 
-        // fade ~2ms
         bypassGainStep_ = 1.0f / (static_cast<float>(sr) * 0.002f);
         bypassGain_ = bypass_ ? 0.0f : 1.0f;
 
-        // mode crossfade ~5ms
-        modeFadeTotal_ = static_cast<int>(sr * 0.005);
-        modeFadeSamples_ = 0;
-        prevMode_ = algorithmMode_;
-        prevOsMode_ = oversamplingMode_;
-        for (auto& buf : modeFadeBuf_) buf.resize(static_cast<size_t>(maxBlock));
+        switchGainStep_ = 1.0f / (static_cast<float>(sr) * 0.004f);
+        switchGain_ = 1.0f;
+        activeMode_ = algorithmMode_;
+        activeOsMode_ = oversamplingMode_;
 
         metering_.sampleRate.store(static_cast<float>(sr), std::memory_order_relaxed);
         sendMeteringPointer();
@@ -161,7 +168,6 @@ void BaseProcessor::readParameterChanges(ProcessData& data) {
 }
 
 void BaseProcessor::updateModeParams(int blockSize) {
-    // norm 0..1 → dB: 0=-inf, 0.5=0dB, 1=+12dB
     auto normToGain = [](float norm) -> float {
         if (norm < 0.001f) return 0.0f;
         float db = (norm - 0.5f) * 24.0f; // 0.5 → 0dB, 1.0 → +12dB, 0.0 → -12dB
@@ -170,34 +176,30 @@ void BaseProcessor::updateModeParams(int blockSize) {
     float inGainLin = normToGain(inputGainNorm_);
     float outGainLin = normToGain(outputGainNorm_);
 
-    // сглаживание критичных параметров (скорректировано по размеру блока)
     float smoothedSat = smoothSaturation_.smooth(saturation_, blockSize);
     float smoothedMix = smoothDryWet_.smooth(dryWet_, blockSize);
 
-    // маппинг оверсемплинга: 0=выкл, 1=2x, 2=4x
     dsp::Oversampler::Factor osFactor;
-    if (oversamplingMode_ >= 2)
+    if (activeOsMode_ >= 2)
         osFactor = dsp::Oversampler::k4x;
-    else if (oversamplingMode_ >= 1)
+    else if (activeOsMode_ >= 1)
         osFactor = dsp::Oversampler::k2x;
     else
         osFactor = dsp::Oversampler::kNone;
 
-    // инструмент
     auto& ip = instrumentMode_->params();
     ip.saturation = smoothedSat;
     ip.inputGain = inGainLin;
     ip.outputGain = outGainLin;
     ip.dryWet = smoothedMix;
-    ip.lowSat = instLowSat_ * 2.0f;
-    ip.midSat = instMidSat_ * 2.0f;
-    ip.highSat = instHighSat_ * 2.0f;
+    ip.lowSat = smoothInstLow_.smooth(instLowSat_, blockSize) * 2.0f;
+    ip.midSat = smoothInstMid_.smooth(instMidSat_, blockSize) * 2.0f;
+    ip.highSat = smoothInstHigh_.smooth(instHighSat_, blockSize) * 2.0f;
     ip.lowMidFreq = normToFreq(instLowMidFreq_, 50.0f, 1000.0f);
     ip.midHighFreq = normToFreq(instMidHighFreq_, 1000.0f, 8000.0f);
-    ip.character = instCharacter_;
+    ip.character = smoothInstChar_.smooth(instCharacter_, blockSize);
     ip.osFactor = osFactor;
 
-    // ударные
     auto& dp = drumMode_->params();
     dp.saturation = smoothedSat;
     dp.inputGain = inGainLin;
@@ -205,17 +207,16 @@ void BaseProcessor::updateModeParams(int blockSize) {
     dp.dryWet = smoothedMix;
     dp.transientSensitivity = drumTransientSens_;
     dp.attackMs = 1.0f + drumAttackMs_ * 9.0f; // norm 0..1 → 1..10 ms
-    dp.sustainSat = drumSustainSat_ * 2.0f;
-    dp.punch = drumPunch_;
+    dp.sustainSat = smoothDrumSustain_.smooth(drumSustainSat_, blockSize) * 2.0f;
+    dp.punch = smoothDrumPunch_.smooth(drumPunch_, blockSize);
     dp.osFactor = osFactor;
 
-    // вокал/лента
     auto& vp = vocalMode_->params();
     vp.saturation = smoothedSat;
     vp.inputGain = inGainLin;
     vp.outputGain = outGainLin;
     vp.dryWet = smoothedMix;
-    vp.tapeBias = tapeBias_;
+    vp.tapeBias = smoothTapeBias_.smooth(tapeBias_, blockSize);
     vp.wowAmount = tapeWow_ * 0.3f;
     vp.flutterAmount = tapeFlutter_ * 0.2f;
     vp.hissLevel = tapeHissLevel_;
@@ -236,7 +237,6 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
     float** in = data.inputs[0].channelBuffers32;
     float** out = data.outputs[0].channelBuffers32;
 
-    // bypass fade target: 1=active, 0=bypassed
     float bypassTarget = bypass_ ? 0.0f : 1.0f;
 
     if (data.inputs[0].silenceFlags != 0 && bypassTarget == 0.0f && bypassGain_ < 0.0001f) {
@@ -250,19 +250,16 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
 
     data.outputs[0].silenceFlags = 0;
 
-    // детекция смены режима или oversampling → запуск crossfade
-    bool settingsChanged = (algorithmMode_ != prevMode_) || (oversamplingMode_ != prevOsMode_);
-    if (settingsChanged && modeFadeSamples_ <= 0) {
-        modeFadeSamples_ = modeFadeTotal_;
-        prevMode_ = algorithmMode_;
-        prevOsMode_ = oversamplingMode_;
-        // modeFadeBuf_ уже содержит выход предыдущего блока
+    // дак: гейн в ноль на старом DSP, смена режима/ОС на границе блока в тишине
+    if (switchGain_ <= 0.0f) {
+        activeMode_ = algorithmMode_;
+        activeOsMode_ = oversamplingMode_;
     }
+    bool switching = (algorithmMode_ != activeMode_) || (oversamplingMode_ != activeOsMode_);
 
     updateModeParams(data.numSamples);
 
-    // рендерим текущий режим в out
-    switch (algorithmMode_) {
+    switch (activeMode_) {
         case INSTRUMENT_MODE:
             instrumentMode_->process(in, out, numChannels, data.numSamples);
             break;
@@ -276,40 +273,37 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
 
     int32 fadeChannels = std::min(numChannels, 2);
 
-    // crossfade: предыдущий блок → новый выход
-    if (modeFadeSamples_ > 0) {
+    float switchTarget = switching ? 0.0f : 1.0f;
+    if (switchGain_ != switchTarget) {
         for (int32 i = 0; i < data.numSamples; ++i) {
-            if (modeFadeSamples_ > 0) {
-                float t = static_cast<float>(modeFadeSamples_) / static_cast<float>(modeFadeTotal_);
-                for (int32 ch = 0; ch < fadeChannels; ++ch) {
-                    out[ch][i] = out[ch][i] * (1.0f - t) + modeFadeBuf_[ch][i] * t;
+            if (switchGain_ < switchTarget)
+                switchGain_ = std::min(switchGain_ + switchGainStep_, 1.0f);
+            else if (switchGain_ > switchTarget)
+                switchGain_ = std::max(switchGain_ - switchGainStep_, 0.0f);
+            for (int32 ch = 0; ch < fadeChannels; ++ch) {
+                out[ch][i] *= switchGain_;
+            }
+        }
+    }
+
+    // клипер: amount рампится по сэмплам; цель 0 при выключении — деклик toggle
+    {
+        float clipStart = smoothClipAmount_.current;
+        float clipEnd = smoothClipAmount_.smooth(
+            clipEnabled_ ? clipAmount_ : 0.0f, data.numSamples);
+        if (clipStart > 0.001f || clipEnd > 0.001f) {
+            float clipStep = (clipEnd - clipStart) / static_cast<float>(data.numSamples);
+            for (int32 ch = 0; ch < numChannels; ++ch) {
+                float amount = clipStart;
+                for (int32 i = 0; i < data.numSamples; ++i) {
+                    amount += clipStep;
+                    out[ch][i] = dsp::softClip(out[ch][i], amount);
                 }
-                --modeFadeSamples_;
             }
         }
     }
 
-    // сохраняем текущий блок для возможного crossfade в следующем блоке
-    for (int32 ch = 0; ch < fadeChannels; ++ch) {
-        if (data.numSamples > 0 &&
-            static_cast<size_t>(data.numSamples) <= modeFadeBuf_[ch].size()) {
-            std::memcpy(modeFadeBuf_[ch].data(), out[ch],
-                        static_cast<size_t>(data.numSamples) * sizeof(float));
-        }
-    }
-
-    float smoothedClip = smoothClipAmount_.smooth(clipAmount_, data.numSamples);
-    if (clipEnabled_ && smoothedClip > 0.001f) {
-        for (int32 ch = 0; ch < numChannels; ++ch) {
-            for (int32 i = 0; i < data.numSamples; ++i) {
-                out[ch][i] = dsp::softClip(out[ch][i], smoothedClip);
-            }
-        }
-    }
-
-    // bypass fade: плавный crossfade между processed и dry
     for (int32 i = 0; i < data.numSamples; ++i) {
-        // двигаем gain к цели
         if (bypassGain_ < bypassTarget)
             bypassGain_ = std::min(bypassGain_ + bypassGainStep_, 1.0f);
         else if (bypassGain_ > bypassTarget)
@@ -445,7 +439,6 @@ tresult PLUGIN_API BaseProcessor::getState(IBStream* state) {
     streamer.writeFloat(tapeHeadCutoff_);
     streamer.writeFloat(tapeSpeed_);
 
-    // v3: клиппер
     streamer.writeBool(clipEnabled_);
     streamer.writeFloat(clipAmount_);
 

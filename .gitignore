@@ -36,3 +36,5 @@ build/
 .vscode/
 .cache/
 tests/param_test
+tools/figparse/
+Saturator.fig

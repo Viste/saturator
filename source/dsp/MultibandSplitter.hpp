@@ -7,7 +7,6 @@
 
 namespace dsp {
 
-// 3-полосный кроссовер linkwitz-riley 4-го порядка
 class MultibandSplitter {
 public:
     struct Bands {
@@ -98,11 +97,9 @@ private:
     float lastLowMid_ = 0.0f;
     float lastMidHigh_ = 0.0f;
 
-    // lr4 нч-сч кроссовер
     std::optional<cycfi::q::lowpass> lp1a_, lp1b_;
     std::optional<cycfi::q::highpass> hp1a_, hp1b_;
 
-    // lr4 сч-вч кроссовер
     std::optional<cycfi::q::lowpass> lp2a_, lp2b_;
     std::optional<cycfi::q::highpass> hp2a_, hp2b_;
 };

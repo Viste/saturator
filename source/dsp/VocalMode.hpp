@@ -12,7 +12,6 @@
 
 namespace dsp {
 
-// вокал/лента: гистерезис + wow/flutter lfo + фильтр головки + шум
 class VocalMode : public SaturationMode {
 public:
     struct Params {
@@ -38,6 +37,10 @@ public:
 private:
     Params params_;
     double sampleRate_ = 44100.0;
+
+    float rampDrive_ = 0.0f;
+    float rampFb_ = 0.0f;
+    bool rampInit_ = false;
 
     struct ChannelState {
         TapeHysteresis hysteresis;

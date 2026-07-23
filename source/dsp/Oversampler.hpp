@@ -6,7 +6,6 @@
 
 namespace dsp {
 
-// полуполосный fir 33 отвода, blackman sinc, dc gain = 1.0
 struct HalfBandKernel {
     static constexpr int kTaps = 33;
     static constexpr int kCenter = 16;
@@ -21,7 +20,6 @@ struct HalfBandKernel {
     };
 };
 
-// оверсемплер 2x/4x, каскадные полуполосные фильтры
 class Oversampler {
 public:
     enum Factor { kNone = 1, k2x = 2, k4x = 4 };
@@ -74,7 +72,6 @@ private:
             dl[0] = data[i];
 
             float sum = dl[C] * k[C];
-            // симметричные пары ненулевых отводов
             for (int j = 1; j <= C; j += 2) {
                 sum += (dl[C - j] + dl[C + j]) * k[C - j];
             }

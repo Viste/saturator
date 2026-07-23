@@ -15,7 +15,6 @@ enum Params : Steinberg::Vst::ParamID {
     kDryWet        = 5,
     kOversampling  = 6,
 
-    // инструмент (100-199)
     kInstLowSat      = 100,
     kInstMidSat      = 101,
     kInstHighSat     = 102,
@@ -23,13 +22,11 @@ enum Params : Steinberg::Vst::ParamID {
     kInstMidHighFreq = 104,
     kInstCharacter   = 105,
 
-    // ударные (200-299)
     kDrumTransientSens = 200,
     kDrumAttackMs      = 201,
     kDrumSustainSat    = 202,
     kDrumPunch         = 203,
 
-    // вокал/лента (300-399)
     kTapeBias       = 300,
     kTapeWow        = 301,
     kTapeFlutter    = 302,
@@ -37,7 +34,6 @@ enum Params : Steinberg::Vst::ParamID {
     kTapeHeadCutoff = 304,
     kTapeSpeed      = 305,
 
-    // клиппер (400-499)
     kClipEnabled    = 400,
     kClipAmount     = 401,
 };

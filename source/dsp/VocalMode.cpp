@@ -27,11 +27,11 @@ void VocalMode::prepare(double sampleRate, int maxBlockSize) {
 
 void VocalMode::process(float** in, float** out, int channels, int numSamples) {
     int chCount = std::min(channels, 2);
+    if (numSamples <= 0) return;
 
-    float mix = params_.dryWet; // mix управляет интенсивностью обработки
+    float mix = params_.dryWet;
 
-    // tapeSpeed 0..1: 0=медленная лента (больше wow, меньше ВЧ), 1=быстрая
-    float speedFactor = 0.5f + params_.tapeSpeed * 1.0f; // 0.5..1.5
+    float speedFactor = 0.5f + params_.tapeSpeed * 1.0f;
 
     float wowFreq = 1.5f * speedFactor;
     float flutterFreq = 7.0f * speedFactor;
@@ -40,18 +40,21 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
     float baseDelay = 8.0f;
 
     float satDrive = params_.saturation * mix;
-    float feedback = (0.1f + params_.tapeBias * 0.4f) * mix; // расширен диапазон bias
+    float feedback = (0.1f + params_.tapeBias * 0.4f) * mix;
+    if (!rampInit_) {
+        rampDrive_ = satDrive;
+        rampFb_ = feedback;
+        rampInit_ = true;
+    }
 
     for (int ch = 0; ch < chCount; ++ch) {
         auto& state = channels_[ch];
 
-        // учёт оверсемплинга в частоте дискретизации гистерезиса
         float effectiveSr = static_cast<float>(sampleRate_) * static_cast<float>(params_.osFactor);
         state.hysteresis.setParams(satDrive, feedback, effectiveSr);
         state.oversampler.setFactor(params_.osFactor);
 
         if (state.headRolloff) {
-            // быстрая лента = выше срез головки, медленная = ниже
             float effectiveCutoff = params_.headCutoff * speedFactor;
             state.headRolloff->config(cycfi::q::frequency(effectiveCutoff),
                                        static_cast<float>(sampleRate_));
@@ -61,14 +64,24 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
             dryBuf_[i] = in[ch][i] * params_.inputGain;
         }
 
-        state.oversampler.process(dryBuf_.data(), out[ch], numSamples,
-            [&state](float s) { return state.hysteresis.process(s); });
+        {
+            float osN = static_cast<float>(numSamples * static_cast<int>(params_.osFactor));
+            float d = rampDrive_;
+            float dStep = (satDrive - d) / osN;
+            float fb = rampFb_;
+            float fbStep = (feedback - fb) / osN;
+            state.oversampler.process(dryBuf_.data(), out[ch], numSamples,
+                [&state, d, dStep, fb, fbStep](float s) mutable {
+                    d += dStep;
+                    fb += fbStep;
+                    state.hysteresis.setDriveFeedback(d, fb);
+                    return state.hysteresis.process(s);
+                });
+        }
 
-        // wow/flutter + фильтр головки + шум + dc block
         for (int i = 0; i < numSamples; ++i) {
             float saturated = out[ch][i];
 
-            // синусоидальная модуляция задержки (wow & flutter)
             float wowMod = std::sin(state.wowPhase) * wowDepth;
             float flutterMod = std::sin(state.flutterPhase) * flutterDepth;
             float totalMod = (wowMod + flutterMod) * static_cast<float>(sampleRate_);
@@ -115,6 +128,9 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
             out[ch][i] = std::clamp(wet * params_.outputGain, -1.0f, 1.0f);
         }
     }
+
+    rampDrive_ = satDrive;
+    rampFb_ = feedback;
 }
 
 float VocalMode::generateNoise() {
@@ -136,6 +152,7 @@ void VocalMode::reset() {
         ch.delayWritePos = 0;
     }
     noiseState_ = 0x67452301;
+    rampInit_ = false;
 }
 
 } // namespace dsp

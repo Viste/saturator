@@ -3,6 +3,8 @@
 #import <MetalKit/MetalKit.h>
 
 #include "ImGuiPlugView.hpp"
+#include "TextureManager.hpp"
+#include "Fonts.hpp"
 #include <imgui.h>
 #include <imgui_impl_metal.h>
 #include <imgui_impl_osx.h>
@@ -48,19 +50,12 @@
         style.Colors[ImGuiCol_FrameBg] = ImVec4(0.18f, 0.18f, 0.22f, 1.0f);
         style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.45f, 0.55f, 0.85f, 1.0f);
 
-        // шрифт с кириллицей
-        ImFontConfig fontCfg;
-        fontCfg.FontNo = 0;
-        fontCfg.OversampleH = 2;
-        fontCfg.OversampleV = 1;
-        const ImWchar* cyrillicRanges = io.Fonts->GetGlyphRangesCyrillic();
-        if (!io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/Helvetica.ttc",
-                                           14.0f, &fontCfg, cyrillicRanges)) {
-            io.Fonts->AddFontDefault();
-        }
-
+        gui::loadFonts();
         ImGui_ImplMetal_Init(device);
         ImGui_ImplOSX_Init(self);
+        gui::TextureManager::setPlatformContext((__bridge void*)device);
+        gui::TextureManager::get().loadAll();
+
         _imguiInitialized = YES;
     }
     return self;
@@ -71,7 +66,6 @@
 #pragma mark - MTKViewDelegate
 
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
-    // MTKView обрабатывает ресайз автоматически
 }
 
 - (void)drawInMTKView:(MTKView*)view {
@@ -86,15 +80,12 @@
 
     id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
 
-    // begin ImGui frame
     ImGui_ImplMetal_NewFrame(rpd);
     ImGui_ImplOSX_NewFrame(view);
     ImGui::NewFrame();
 
-    // отрисовка UI плагина
     _plugView->renderFrame();
 
-    // end ImGui frame
     ImGui::Render();
     id<MTLRenderCommandEncoder> encoder =
         [commandBuffer renderCommandEncoderWithDescriptor:rpd];
@@ -112,6 +103,7 @@
     _imguiInitialized = NO;
 
     ImGui::SetCurrentContext(_imguiContext);
+    gui::TextureManager::get().unloadAll();
     ImGui_ImplMetal_Shutdown();
     ImGui_ImplOSX_Shutdown();
     ImGui::DestroyContext(_imguiContext);
@@ -140,7 +132,6 @@
     [self addTrackingArea:ta];
 }
 
-// события мыши/клавиатуры → перерисовка
 - (void)mouseDown:(NSEvent*)event       { [self setNeedsDisplay:YES]; }
 - (void)mouseUp:(NSEvent*)event         { [self setNeedsDisplay:YES]; }
 - (void)mouseMoved:(NSEvent*)event      { [self setNeedsDisplay:YES]; }
@@ -193,7 +184,6 @@ void ImGuiPlugView::platformEndFrame() {
 }
 
 void ImGuiPlugView::platformResize(int /*width*/, int /*height*/) {
-    // MTKView авто-ресайзится через NSViewWidthSizable | NSViewHeightSizable
 }
 
 } // namespace gui

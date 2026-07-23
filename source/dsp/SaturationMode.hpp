@@ -4,7 +4,6 @@
 
 namespace dsp {
 
-// базовый интерфейс режимов сатурации
 class SaturationMode {
 public:
     virtual ~SaturationMode() = default;

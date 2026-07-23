@@ -12,7 +12,6 @@
 
 namespace dsp {
 
-// мультиполосная сатурация: lr4 кроссовер → побандовый tube/tanh → сборка
 class InstrumentMode : public SaturationMode {
 public:
     struct Params {
@@ -36,14 +35,24 @@ public:
     Params& params() { return params_; }
 
 private:
-    float processBand(float sample, float drive);
+    float processBand(float sample, float drive, float character, float& evenLp);
 
     Params params_;
     double sampleRate_ = 44100.0;
 
+    float rampDrive_[3] = {};
+    float rampChar_ = 0.5f;
+    bool rampInit_ = false;
+    float heldDrive_[2][3] = {};
+    float heldChar_[2][3] = {};
+    float prevSample_[2][3] = {};
+
+    // highpass ~25Гц на чётной гармонике T2: у неё сигнало-зависимый DC
+    float evenLp_[2][3] = {};
+    float evenLpCoeff_ = 0.003f;
+
     std::array<MultibandSplitter, 2> splitters_;
 
-    // 3 оверсемплера на канал (нч/сч/вч)
     std::array<std::array<Oversampler, 3>, 2> oversamplers_;
 
     std::vector<float> bandBuf_[3];

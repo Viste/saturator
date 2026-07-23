@@ -101,7 +101,6 @@ void UpdateChecker::openInBrowser(const char* url) {
     } catch (...) {}
 }
 
-// простой парсер JSON — ищем "key": "value"
 static std::string jsonValue(const std::string& json, const char* key) {
     std::string needle = std::string("\"") + key + "\"";
     auto pos = json.find(needle);

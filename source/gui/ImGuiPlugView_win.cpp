@@ -1,6 +1,8 @@
 #ifdef _WIN32
 
 #include "ImGuiPlugView.hpp"
+#include "TextureManager.hpp"
+#include "Fonts.hpp"
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
 #include <imgui_impl_win32.h>
@@ -126,21 +128,10 @@ bool ImGuiPlugView::platformInit(void* parentWindow) {
     style.Colors[ImGuiCol_FrameBg] = ImVec4(0.18f, 0.18f, 0.22f, 1.0f);
     style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.45f, 0.55f, 0.85f, 1.0f);
 
-    {
-        ImFontConfig fontCfg;
-        fontCfg.OversampleH = 2;
-        fontCfg.OversampleV = 1;
-        const ImWchar* cyrillicRanges = io.Fonts->GetGlyphRangesCyrillic();
-        if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf",
-                                           15.0f, &fontCfg, cyrillicRanges)) {
-            io.Fonts->AddFontDefault();
-        }
-    }
-
+    gui::loadFonts();
     ImGui_ImplWin32_Init(data->hwnd);
     ImGui_ImplOpenGL3_Init("#version 130");
-
-    // таймер рендеринга 60fps
+    gui::TextureManager::get().loadAll();
     data->timerId = SetTimer(data->hwnd, 1, 16, nullptr);
 
     platformData_ = data;
@@ -151,9 +142,6 @@ void ImGuiPlugView::platformShutdown() {
     auto* data = static_cast<Win32PlatformData*>(platformData_);
     if (!data) return;
 
-    // отключаем WndProc от данных ДО любого уничтожения —
-    // DestroyWindow прокачивает оставшиеся WM_PAINT/WM_TIMER,
-    // если WndProc увидит валидный data, будет use-after-free
     data->plugView = nullptr;
     SetWindowLongPtr(data->hwnd, GWLP_USERDATA, 0);
 
@@ -164,6 +152,7 @@ void ImGuiPlugView::platformShutdown() {
 
     wglMakeCurrent(data->hdc, data->hglrc);
     ImGui::SetCurrentContext(data->imguiContext);
+    gui::TextureManager::get().unloadAll();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext(data->imguiContext);

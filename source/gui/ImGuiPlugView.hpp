@@ -6,8 +6,6 @@
 
 namespace gui {
 
-// vst3 IPlugView на dear imgui + opengl
-// платформенный рендеринг в ImGuiPlugView_mac.mm / ImGuiPlugView_win.cpp
 class ImGuiPlugView : public Steinberg::CPluginView {
 public:
     explicit ImGuiPlugView(Steinberg::Vst::EditController* controller);
@@ -34,9 +32,9 @@ private:
     Steinberg::Vst::EditController* controller_ = nullptr;
     UIState uiState_;
 
-    static constexpr int kDefaultWidth = 900;
-    static constexpr int kDefaultHeight = 500;
-    static constexpr int kExpandedHeight = 700;
+    static constexpr int kDefaultWidth = 1080;
+    static constexpr int kDefaultHeight = 600;
+    static constexpr int kExpandedHeight = 840;
 
     void* platformData_ = nullptr;
     bool initialized_ = false;

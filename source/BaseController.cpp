@@ -20,7 +20,6 @@ tresult PLUGIN_API BaseController::initialize(FUnknown* context) {
 
     EditController::setKnobMode(kLinearMode);
 
-    // глобальные
     parameters.addParameter(STR16("Bypass"), nullptr, 1, 0,
                             ParameterInfo::kCanAutomate | ParameterInfo::kIsBypass, kBypass);
 
@@ -48,7 +47,6 @@ tresult PLUGIN_API BaseController::initialize(FUnknown* context) {
     osParam->appendString(STR16("4x"));
     parameters.addParameter(osParam);
 
-    // инструмент
     parameters.addParameter(STR16("Low Band Sat"), STR16("%"), 0, 0.5,
                             ParameterInfo::kCanAutomate, kInstLowSat);
     parameters.addParameter(STR16("Mid Band Sat"), STR16("%"), 0, 0.5,
@@ -62,7 +60,6 @@ tresult PLUGIN_API BaseController::initialize(FUnknown* context) {
     parameters.addParameter(STR16("Character"), STR16("%"), 0, 0.5,
                             ParameterInfo::kCanAutomate, kInstCharacter);
 
-    // ударные
     parameters.addParameter(STR16("Transient Sens"), STR16("%"), 0, 0.5,
                             ParameterInfo::kCanAutomate, kDrumTransientSens);
     parameters.addParameter(STR16("Attack"), STR16("ms"), 0, 0.25,
@@ -72,7 +69,6 @@ tresult PLUGIN_API BaseController::initialize(FUnknown* context) {
     parameters.addParameter(STR16("Punch"), STR16("%"), 0, 0.5,
                             ParameterInfo::kCanAutomate, kDrumPunch);
 
-    // вокал/лента
     parameters.addParameter(STR16("Tape Bias"), STR16("%"), 0, 0.5,
                             ParameterInfo::kCanAutomate, kTapeBias);
     parameters.addParameter(STR16("Wow"), STR16("%"), 0, 0.3,
@@ -86,7 +82,6 @@ tresult PLUGIN_API BaseController::initialize(FUnknown* context) {
     parameters.addParameter(STR16("Tape Speed"), STR16("%"), 0, 0.5,
                             ParameterInfo::kCanAutomate, kTapeSpeed);
 
-    // клиппер
     auto* clipEnParam = new StringListParameter(STR16("Clip Enabled"), kClipEnabled);
     clipEnParam->appendString(STR16("Off"));
     clipEnParam->appendString(STR16("On"));
