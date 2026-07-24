@@ -32,7 +32,8 @@ jobs:
     - name: Run DSP tests
       shell: cmd
       run: |
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+        for /f "usebackq delims=" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+        call "%VSPATH%\VC\Auxiliary\Build\vcvarsall.bat" x64
         cl.exe /std:c++latest /EHsc /O2 /I source /I extra\q_lib\include /I extra\infra\include tests\param_test.cpp source\dsp\InstrumentMode.cpp source\dsp\DrumMode.cpp source\dsp\VocalMode.cpp source\dsp\MultibandSplitter.cpp /Fe:tests\param_test.exe
         tests\param_test.exe
 
@@ -49,7 +50,7 @@ jobs:
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         VERSION=${GITHUB_REF_NAME#v}
-        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.2.2"; fi
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.3.0"; fi
         iscc //DAppVersion="$VERSION" //DVst3Source="$(cygpath -w "$(pwd)/$VST3_PATH")" \
              //O"." installer/saturator.iss
 
@@ -120,7 +121,7 @@ jobs:
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         VERSION=${GITHUB_REF_NAME#v}
-        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.2.2"; fi
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.3.0"; fi
 
         # создаём структуру для DMG
         DMG_DIR=$(mktemp -d)
