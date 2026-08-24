@@ -52,6 +52,7 @@ private:
 
         std::vector<float> lookaheadBuf;
         int lookaheadWritePos = 0;
+        float lastAbs = 0.0f;
     };
 
     std::array<ChannelState, 2> channels_;

@@ -50,7 +50,7 @@ jobs:
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         VERSION=${GITHUB_REF_NAME#v}
-        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.3.0"; fi
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.3.3"; fi
         iscc //DAppVersion="$VERSION" //DVst3Source="$(cygpath -w "$(pwd)/$VST3_PATH")" \
              //O"." installer/saturator.iss
 
@@ -121,7 +121,7 @@ jobs:
       run: |
         VST3_PATH=$(find build -name "Saturator.vst3" -type d | head -1)
         VERSION=${GITHUB_REF_NAME#v}
-        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.3.0"; fi
+        if [[ ! "$VERSION" =~ ^[0-9] ]]; then VERSION="2.3.3"; fi
 
         # создаём структуру для DMG
         DMG_DIR=$(mktemp -d)

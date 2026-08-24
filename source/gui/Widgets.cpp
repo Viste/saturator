@@ -479,6 +479,8 @@ void SpectrumDisplay(const char* label,
         st.init = true;
     }
     for (int i = 0; i <= kBins; ++i) {
+        if (!std::isfinite(magDb[i])) magDb[i] = -80.0f;
+        if (!std::isfinite(smoothed[i])) smoothed[i] = magDb[i];
         if (magDb[i] > smoothed[i])
             smoothed[i] = magDb[i];
         else

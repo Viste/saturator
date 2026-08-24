@@ -19,6 +19,8 @@ public:
     Steinberg::tresult PLUGIN_API canResize() override;
 
     void renderFrame();
+    bool hasPendingResize() const { return pendingResizeHeight_ > 0; }
+    void flushPendingResize();
 
     UIState& getUIState() { return uiState_; }
 
@@ -38,6 +40,7 @@ private:
 
     void* platformData_ = nullptr;
     bool initialized_ = false;
+    int pendingResizeHeight_ = 0;
 };
 
 } // namespace gui

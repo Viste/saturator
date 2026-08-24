@@ -85,6 +85,7 @@ private:
 
     bool clipEnabled_ = false;
     float clipAmount_ = 0.0f;
+    std::vector<float> dryBuf_[2];
 
     ParamSmoother smoothSaturation_;
     ParamSmoother smoothDryWet_;

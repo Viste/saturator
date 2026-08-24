@@ -50,6 +50,7 @@ void DrumMode::process(float** in, float** out, int channels, int numSamples) {
         float sps = static_cast<float>(sampleRate_);
         for (auto& ch : channels_) {
             ch.fastEnv.emplace(cycfi::q::duration(attackSec), sps);
+            (*ch.fastEnv)(ch.lastAbs);
         }
     }
 
@@ -63,6 +64,7 @@ void DrumMode::process(float** in, float** out, int channels, int numSamples) {
         for (int i = 0; i < numSamples; ++i) {
             float current = in[ch][i] * params_.inputGain;
             float absCurrent = std::abs(current);
+            state.lastAbs = absCurrent;
             float fastLevel = (*state.fastEnv)(absCurrent);
             float slowLevel = (*state.slowEnv)(absCurrent);
             float transientAmount = std::max(0.0f, fastLevel - slowLevel);

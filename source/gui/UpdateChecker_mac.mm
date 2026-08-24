@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
 #include "UpdateChecker.hpp"
+#include <dlfcn.h>
+#include <mutex>
 #include <thread>
 
 namespace gui {
@@ -75,6 +77,14 @@ bool UpdateChecker::isNewer(const char* latest, const char* current) {
 void UpdateChecker::checkForUpdate(const char* currentVersion) {
     if (checked_.load()) return;
     checked_.store(true);
+
+    static std::once_flag pinOnce;
+    std::call_once(pinOnce, [] {
+        Dl_info di{};
+        if (dladdr(reinterpret_cast<void*>(&UpdateChecker::checkForUpdate), &di) && di.dli_fname) {
+            dlopen(di.dli_fname, RTLD_NOW | RTLD_NODELETE);
+        }
+    });
 
     std::string ver(currentVersion);
     try {

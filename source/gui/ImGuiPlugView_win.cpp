@@ -37,6 +37,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     switch (msg) {
         case WM_TIMER:
             if (data && data->plugView) {
+                data->plugView->flushPendingResize();
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
             return 0;

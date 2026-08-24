@@ -79,18 +79,26 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
                 });
         }
 
+        const float sr = static_cast<float>(sampleRate_);
+        const float twoPi = 2.0f * static_cast<float>(M_PI);
+        const float wowInc = twoPi * wowFreq / sr;
+        const float flInc = twoPi * flutterFreq / sr;
+        float wowSin = std::sin(state.wowPhase), wowCos = std::cos(state.wowPhase);
+        float flSin = std::sin(state.flutterPhase), flCos = std::cos(state.flutterPhase);
+        const float wowSinInc = std::sin(wowInc), wowCosInc = std::cos(wowInc);
+        const float flSinInc = std::sin(flInc), flCosInc = std::cos(flInc);
+
         for (int i = 0; i < numSamples; ++i) {
             float saturated = out[ch][i];
 
-            float wowMod = std::sin(state.wowPhase) * wowDepth;
-            float flutterMod = std::sin(state.flutterPhase) * flutterDepth;
-            float totalMod = (wowMod + flutterMod) * static_cast<float>(sampleRate_);
+            float totalMod = (wowSin * wowDepth + flSin * flutterDepth) * sr;
 
-            float twoPi = 2.0f * static_cast<float>(M_PI);
-            state.wowPhase += twoPi * wowFreq / static_cast<float>(sampleRate_);
-            state.flutterPhase += twoPi * flutterFreq / static_cast<float>(sampleRate_);
-            if (state.wowPhase > twoPi) state.wowPhase -= twoPi;
-            if (state.flutterPhase > twoPi) state.flutterPhase -= twoPi;
+            float wt = wowSin * wowCosInc + wowCos * wowSinInc;
+            wowCos = wowCos * wowCosInc - wowSin * wowSinInc;
+            wowSin = wt;
+            float ft = flSin * flCosInc + flCos * flSinInc;
+            flCos = flCos * flCosInc - flSin * flSinInc;
+            flSin = ft;
 
             state.delayBuffer[state.delayWritePos] = saturated;
 
@@ -127,6 +135,9 @@ void VocalMode::process(float** in, float** out, int channels, int numSamples) {
 
             out[ch][i] = std::clamp(wet * params_.outputGain, -1.0f, 1.0f);
         }
+
+        state.wowPhase = std::fmod(state.wowPhase + wowInc * numSamples, twoPi);
+        state.flutterPhase = std::fmod(state.flutterPhase + flInc * numSamples, twoPi);
     }
 
     rampDrive_ = satDrive;

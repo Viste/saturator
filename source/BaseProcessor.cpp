@@ -8,6 +8,30 @@
 #include <cmath>
 #include <cstring>
 
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+#include <immintrin.h>
+#define SAT_HAS_SSE 1
+#endif
+
+namespace {
+struct ScopedNoDenormals {
+#if defined(SAT_HAS_SSE)
+    unsigned int saved_;
+    ScopedNoDenormals() : saved_(_mm_getcsr()) { _mm_setcsr(saved_ | 0x8040); }
+    ~ScopedNoDenormals() { _mm_setcsr(saved_); }
+#elif defined(__aarch64__)
+    uint64_t saved_;
+    ScopedNoDenormals() {
+        __asm__ __volatile__("mrs %0, fpcr" : "=r"(saved_));
+        __asm__ __volatile__("msr fpcr, %0" :: "r"(saved_ | (1ull << 24)));
+    }
+    ~ScopedNoDenormals() {
+        __asm__ __volatile__("msr fpcr, %0" :: "r"(saved_));
+    }
+#endif
+};
+}
+
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
@@ -47,6 +71,8 @@ tresult PLUGIN_API BaseProcessor::setActive(TBool state) {
         instrumentMode_->prepare(sr, maxBlock);
         drumMode_->prepare(sr, maxBlock);
         vocalMode_->prepare(sr, maxBlock);
+
+        for (auto& b : dryBuf_) b.assign(static_cast<size_t>(maxBlock), 0.0f);
 
         ParamSmoother* smoothers[] = {
             &smoothSaturation_, &smoothDryWet_, &smoothClipAmount_,
@@ -132,6 +158,8 @@ void BaseProcessor::readParameterChanges(ProcessData& data) {
             continue;
 
         float v = static_cast<float>(value);
+        if (!std::isfinite(v)) continue;
+        v = std::clamp(v, 0.0f, 1.0f);
 
         switch (queue->getParameterId()) {
             case kBypass:        bypass_ = (v > 0.5f); break;
@@ -226,6 +254,8 @@ void BaseProcessor::updateModeParams(int blockSize) {
 }
 
 tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
+    ScopedNoDenormals noDenormals;
+
     readParameterChanges(data);
 
     if (data.numInputs != 1 || data.numOutputs != 1)
@@ -239,7 +269,9 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
 
     float bypassTarget = bypass_ ? 0.0f : 1.0f;
 
-    if (data.inputs[0].silenceFlags != 0 && bypassTarget == 0.0f && bypassGain_ < 0.0001f) {
+    uint64 silentMask = (numChannels >= 64) ? ~0ull : ((1ull << numChannels) - 1ull);
+    if ((data.inputs[0].silenceFlags & silentMask) == silentMask &&
+        bypassTarget == 0.0f && bypassGain_ < 0.0001f) {
         data.outputs[0].silenceFlags = data.inputs[0].silenceFlags;
         for (int32 i = 0; i < numChannels; ++i) {
             if (in[i] != out[i])
@@ -250,6 +282,28 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
 
     data.outputs[0].silenceFlags = 0;
 
+    const int32 numSamples = std::min(
+        data.numSamples, static_cast<int32>(dryBuf_[0].size()));
+    if (numSamples <= 0) return kResultOk;
+    for (int32 ch = 0; ch < numChannels; ++ch) {
+        if (in[ch] != out[ch] && data.numSamples > numSamples) {
+            std::memcpy(out[ch] + numSamples, in[ch] + numSamples,
+                        static_cast<size_t>(data.numSamples - numSamples) * sizeof(float));
+        }
+    }
+
+    int32 dryChannels = std::min(numChannels, 2);
+    float* dry[2] = { dryBuf_[0].data(), dryBuf_[1].data() };
+    for (int32 ch = 0; ch < dryChannels; ++ch) {
+        const float* src = in[ch];
+        float* dst = dry[ch];
+        for (int32 i = 0; i < numSamples; ++i) {
+            float v = src[i];
+            dst[i] = std::isfinite(v) ? v : 0.0f;
+        }
+    }
+    if (dryChannels < 2) dry[1] = dry[0];
+
     // дак: гейн в ноль на старом DSP, смена режима/ОС на границе блока в тишине
     if (switchGain_ <= 0.0f) {
         activeMode_ = algorithmMode_;
@@ -257,25 +311,30 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
     }
     bool switching = (algorithmMode_ != activeMode_) || (oversamplingMode_ != activeOsMode_);
 
-    updateModeParams(data.numSamples);
+    updateModeParams(numSamples);
 
     switch (activeMode_) {
-        case INSTRUMENT_MODE:
-            instrumentMode_->process(in, out, numChannels, data.numSamples);
-            break;
         case DRUM_MODE:
-            drumMode_->process(in, out, numChannels, data.numSamples);
+            drumMode_->process(dry, out, dryChannels, numSamples);
             break;
         case VOCAL_MODE:
-            vocalMode_->process(in, out, numChannels, data.numSamples);
+            vocalMode_->process(dry, out, dryChannels, numSamples);
+            break;
+        default:
+            instrumentMode_->process(dry, out, dryChannels, numSamples);
             break;
     }
 
-    int32 fadeChannels = std::min(numChannels, 2);
+    for (int32 ch = 2; ch < numChannels; ++ch) {
+        if (in[ch] != out[ch])
+            std::memcpy(out[ch], in[ch], static_cast<size_t>(numSamples) * sizeof(float));
+    }
+
+    int32 fadeChannels = dryChannels;
 
     float switchTarget = switching ? 0.0f : 1.0f;
     if (switchGain_ != switchTarget) {
-        for (int32 i = 0; i < data.numSamples; ++i) {
+        for (int32 i = 0; i < numSamples; ++i) {
             if (switchGain_ < switchTarget)
                 switchGain_ = std::min(switchGain_ + switchGainStep_, 1.0f);
             else if (switchGain_ > switchTarget)
@@ -290,12 +349,12 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
     {
         float clipStart = smoothClipAmount_.current;
         float clipEnd = smoothClipAmount_.smooth(
-            clipEnabled_ ? clipAmount_ : 0.0f, data.numSamples);
+            clipEnabled_ ? clipAmount_ : 0.0f, numSamples);
         if (clipStart > 0.001f || clipEnd > 0.001f) {
-            float clipStep = (clipEnd - clipStart) / static_cast<float>(data.numSamples);
-            for (int32 ch = 0; ch < numChannels; ++ch) {
+            float clipStep = (clipEnd - clipStart) / static_cast<float>(numSamples);
+            for (int32 ch = 0; ch < fadeChannels; ++ch) {
                 float amount = clipStart;
-                for (int32 i = 0; i < data.numSamples; ++i) {
+                for (int32 i = 0; i < numSamples; ++i) {
                     amount += clipStep;
                     out[ch][i] = dsp::softClip(out[ch][i], amount);
                 }
@@ -303,27 +362,25 @@ tresult PLUGIN_API BaseProcessor::process(ProcessData& data) {
         }
     }
 
-    for (int32 i = 0; i < data.numSamples; ++i) {
+    for (int32 i = 0; i < numSamples; ++i) {
         if (bypassGain_ < bypassTarget)
             bypassGain_ = std::min(bypassGain_ + bypassGainStep_, 1.0f);
         else if (bypassGain_ > bypassTarget)
             bypassGain_ = std::max(bypassGain_ - bypassGainStep_, 0.0f);
 
         if (bypassGain_ < 1.0f) {
-            float dry = 1.0f - bypassGain_;
-            for (int32 ch = 0; ch < numChannels; ++ch) {
-                out[ch][i] = out[ch][i] * bypassGain_ + in[ch][i] * dry;
+            float dryMix = 1.0f - bypassGain_;
+            for (int32 ch = 0; ch < fadeChannels; ++ch) {
+                out[ch][i] = out[ch][i] * bypassGain_ + dry[ch][i] * dryMix;
             }
         }
     }
 
-    for (int i = 0; i < data.numSamples; ++i) {
-        float inL = in[0][i];
-        float inR = (numChannels > 1) ? in[1][i] : inL;
+    for (int32 i = 0; i < numSamples; ++i) {
         float outL = out[0][i];
         float outR = (numChannels > 1) ? out[1][i] : outL;
 
-        metering_.pushInputSample(inL, inR);
+        metering_.pushInputSample(dry[0][i], dry[1][i]);
         metering_.pushOutputSample(outL, outR);
     }
 
@@ -348,7 +405,7 @@ tresult PLUGIN_API BaseProcessor::setState(IBStream* state) {
         if (streamer.readFloat(savedSat)) saturation_ = savedSat;
 
         int32 savedMode = 0;
-        if (streamer.readInt32(savedMode)) algorithmMode_ = savedMode;
+        if (streamer.readInt32(savedMode)) algorithmMode_ = std::clamp(savedMode, 0, 2);
 
         float savedGain = 0.5f;
         if (streamer.readFloat(savedGain)) {
@@ -374,7 +431,7 @@ tresult PLUGIN_API BaseProcessor::setState(IBStream* state) {
 
         int32 os = 0;
         streamer.readInt32(os);
-        oversamplingMode_ = os;
+        oversamplingMode_ = std::clamp(os, 0, 2);
 
         streamer.readFloat(instLowSat_);
         streamer.readFloat(instMidSat_);
@@ -446,10 +503,12 @@ tresult PLUGIN_API BaseProcessor::getState(IBStream* state) {
 }
 
 uint32 BaseProcessor::getLatencySamples() {
+    static constexpr uint32 kOsLatency[3] = { 0, 16, 24 };
+    uint32 lat = kOsLatency[std::clamp(oversamplingMode_, 0, 2)];
     if (algorithmMode_ == DRUM_MODE && drumMode_) {
-        return static_cast<uint32>(drumMode_->getLatencySamples());
+        lat += static_cast<uint32>(drumMode_->getLatencySamples());
     }
-    return 0;
+    return lat;
 }
 
 tresult PLUGIN_API BaseProcessor::notify(IMessage* message) {

@@ -12,7 +12,7 @@ set(SMTG_CREATE_PLUGIN_LINK OFF)
 set(SMTG_ENABLE_VSTGUI_SUPPORT OFF)
 
 project(Saturator
-    VERSION 2.3.0
+    VERSION 2.3.3
     DESCRIPTION "Saturator VST 3 Plug-in"
 )
 
@@ -41,7 +41,6 @@ set(IMGUI_SOURCES
 
 if(APPLE)
     list(APPEND IMGUI_SOURCES
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_osx.mm
         ${imgui_SOURCE_DIR}/backends/imgui_impl_metal.mm
     )
 elseif(WIN32)
@@ -61,7 +60,6 @@ target_compile_features(imgui PRIVATE cxx_std_17)
 if(APPLE)
     target_link_libraries(imgui PUBLIC "-framework AppKit" "-framework Metal")
     set_source_files_properties(
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_osx.mm
         ${imgui_SOURCE_DIR}/backends/imgui_impl_metal.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
@@ -190,14 +188,12 @@ if(APPLE)
     find_library(METAL_LIBRARY Metal)
     find_library(METALKIT_LIBRARY MetalKit)
     find_library(QUARTZCORE_LIBRARY QuartzCore)
-    find_library(GAMECONTROLLER_LIBRARY GameController)
     target_link_libraries(Saturator PRIVATE
         ${COREFOUNDATION_LIBRARY}
         ${IOKIT_LIBRARY}
         ${METAL_LIBRARY}
         ${METALKIT_LIBRARY}
         ${QUARTZCORE_LIBRARY}
-        ${GAMECONTROLLER_LIBRARY}
     )
 
     smtg_target_set_bundle(Saturator
@@ -208,8 +204,8 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resource/Info.plist"
         MACOSX_BUNDLE_BUNDLE_NAME "Saturator"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.vlab.saturatorvst3"
-        MACOSX_BUNDLE_BUNDLE_VERSION "2.3.0"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "2.3.0"
+        MACOSX_BUNDLE_BUNDLE_VERSION "2.3.3"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "2.3.3"
     )
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/PkgInfo" "BNDL????")
     add_custom_command(TARGET Saturator POST_BUILD
@@ -275,7 +271,6 @@ if(APPLE AND SATURATOR_BUILD_UI_PREVIEW)
         ${METAL_LIBRARY}
         ${METALKIT_LIBRARY}
         ${QUARTZCORE_LIBRARY}
-        ${GAMECONTROLLER_LIBRARY}
         "-framework ImageIO"
         "-framework CoreGraphics"
         "-framework CoreServices"

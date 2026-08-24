@@ -192,6 +192,14 @@ void BaseController::viewRemoved(gui::ImGuiPlugView* view) {
 }
 
 tresult PLUGIN_API BaseController::setParamNormalized(ParamID tag, ParamValue value) {
+    if ((tag == kMode || tag == kOversampling) && componentHandler) {
+        ParamValue prev = getParamNormalized(tag);
+        tresult res = EditController::setParamNormalized(tag, value);
+        if (res == kResultOk && prev != value) {
+            componentHandler->restartComponent(kLatencyChanged);
+        }
+        return res;
+    }
     return EditController::setParamNormalized(tag, value);
 }
 

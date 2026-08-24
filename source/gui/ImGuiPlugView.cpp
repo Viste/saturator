@@ -83,12 +83,20 @@ void ImGuiPlugView::renderFrame() {
 
     int reqH = uiState_.requestedHeight;
     if (reqH > 0 && reqH != (rect.bottom - rect.top)) {
-        Steinberg::ViewRect newRect(0, 0, rect.right - rect.left, reqH);
-        rect = newRect;
-        if (plugFrame)
-            plugFrame->resizeView(this, &newRect);
+        pendingResizeHeight_ = reqH;
     }
     uiState_.requestedHeight = 0;
+}
+
+void ImGuiPlugView::flushPendingResize() {
+    int reqH = pendingResizeHeight_;
+    pendingResizeHeight_ = 0;
+    if (!initialized_ || reqH <= 0 || reqH == (rect.bottom - rect.top))
+        return;
+    Steinberg::ViewRect newRect(0, 0, rect.right - rect.left, reqH);
+    rect = newRect;
+    if (plugFrame)
+        plugFrame->resizeView(this, &newRect);
 }
 
 } // namespace gui
